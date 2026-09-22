@@ -1,21 +1,622 @@
 // use prisma-8
 
-model User {
-  id        Int      @id @default(autoincrement())
-  email     String   @unique
-  username  String?
-  name      String?
-  posts     Post[]
-  createdAt TimestamptzString @default(now())
-  updatedAt temporal.updatedAtString()
+// Scope: single-seller shop, authenticated checkout, one stock pool per SKU.
+// Every product has at least one variant, including products without options.
+// Money: BigInt in the currency's smallest unit (VND: dong; USD: cents).
+// Serialize BigInt amounts as strings at the HTTP boundary; never use Float.
+// Normalize email to lowercase and SKU/currency/country codes before writes.
+// Archive users/products/variants instead of deleting commercial history.
+// updatedAt is maintained by Prisma's runtime; raw SQL must maintain it too.
+//
+// Transaction/service invariants (not implied by these field declarations):
+// - quantities > 0; monetary amounts >= 0; refunds > 0.
+// - 0 <= reserved <= onHand; available stock = onHand - reserved.
+// - reservation.quantity equals its order item's quantity.
+// - order subtotal = sum(unitPrice * quantity); total = subtotal - discount
+//   + shipping + tax; discount <= subtotal. All amounts use one currency.
+// - payment.amount/currency match the order; successful refunds cannot exceed
+//   the captured payment. Serialize payment/refund transitions per payment.
+// - checkout, stock reservation, idempotency and outbox writes commit together
+//   while these modules share a database. Do not call payment APIs in a DB tx.
+// Add SQL CHECK constraints for row-level numeric rules in a reviewed migration;
+// use transactions/conditional updates for cross-row rules and concurrency.
+enum UserRole {
+  @@type("pg/text@1")
+  CUSTOMER
+  ADMIN
 }
 
-model Post {
-  id        Int      @id @default(autoincrement())
-  title     String
-  content   String?
-  author    User     @relation(fields: [authorId], references: [id])
-  authorId  Int
+enum UserStatus {
+  @@type("pg/text@1")
+  ACTIVE
+  SUSPENDED
+  DELETED
+}
+
+enum ProductStatus {
+  @@type("pg/text@1")
+  DRAFT
+  ACTIVE
+  ARCHIVED
+}
+
+enum OrderStatus {
+  @@type("pg/text@1")
+  PENDING
+  CONFIRMED
+  PROCESSING
+  SHIPPED
+  DELIVERED
+  CANCELLED
+}
+
+enum ReservationStatus {
+  @@type("pg/text@1")
+  ACTIVE
+  CONSUMED
+  RELEASED
+  EXPIRED
+}
+
+enum InventoryMovementType {
+  @@type("pg/text@1")
+  RECEIPT
+  RESERVE
+  RELEASE
+  SALE
+  RETURN
+  ADJUSTMENT
+}
+
+enum PaymentStatus {
+  @@type("pg/text@1")
+  PENDING
+  PROCESSING
+  UNKNOWN
+  SUCCEEDED
+  FAILED
+  CANCELLED
+  PARTIALLY_REFUNDED
+  REFUNDED
+}
+
+enum RefundStatus {
+  @@type("pg/text@1")
+  PENDING
+  PROCESSING
+  UNKNOWN
+  SUCCEEDED
+  FAILED
+}
+
+enum ProcessingStatus {
+  @@type("pg/text@1")
+  PENDING
+  PROCESSING
+  PROCESSED
+  FAILED
+}
+
+enum IdempotencyStatus {
+  @@type("pg/text@1")
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
+enum NotificationChannel {
+  @@type("pg/text@1")
+  IN_APP
+  EMAIL
+}
+
+enum NotificationStatus {
+  @@type("pg/text@1")
+  PENDING
+  PROCESSING
+  SENT
+  FAILED
+}
+
+// Identity. Store a password hash only, never the password itself.
+model User {
+  id                 Uuid                       @id @default(uuid())
+  email              String                     @unique
+  username           String?                    @unique
+  passwordHash       String
+  name               String?
+  phone              String?
+  role               UserRole                   @default(CUSTOMER)
+  status             UserStatus                 @default(ACTIVE)
+  emailVerifiedAt    TimestamptzString?
+  lastLoginAt        TimestamptzString?
+  deletedAt          TimestamptzString?
+  createdAt          TimestamptzString          @default(now())
+  updatedAt          temporal.updatedAtString()
+
+  addresses          UserAddress[]
+  cart               Cart?
+  orders             Order[]
+  idempotencyRecords IdempotencyRecord[]
+  notifications      Notification[]
+
+  @@map("users")
+}
+
+// Reusable addresses. An Order stores a separate snapshot, not a live address FK.
+model UserAddress {
+  id            Uuid                       @id @default(uuid())
+  userId        Uuid
+  label         String?
+  recipientName String
+  phone         String
+  addressLine1  String
+  addressLine2  String?
+  ward          String?
+  district      String?
+  city          String
+  province      String?
+  postalCode    String?
+  countryCode   String                     @default("VN")
+  createdAt     TimestamptzString          @default(now())
+  updatedAt     temporal.updatedAtString()
+
+  user          User                       @relation(fields:[userId], references:[id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("user_addresses")
+}
+
+// A flat category list is sufficient initially; one category per product.
+model Category {
+  id          Uuid                       @id @default(uuid())
+  name        String
+  slug        String                     @unique
+  description String?
+  isActive    Boolean                    @default(true)
+  createdAt   TimestamptzString          @default(now())
+  updatedAt   temporal.updatedAtString()
+
+  products    Product[]
+
+  @@map("categories")
+}
+
+model Product {
+  id          Uuid                       @id @default(uuid())
+  categoryId  Uuid?
+  name        String
+  slug        String                     @unique
+  description String?
+  status      ProductStatus              @default(DRAFT)
+  publishedAt TimestamptzString?
+  archivedAt  TimestamptzString?
+  createdAt   TimestamptzString          @default(now())
+  updatedAt   temporal.updatedAtString()
+
+  category    Category?                  @relation(fields:[categoryId], references:[id], onDelete: SetNull)
+  variants    ProductVariant[]
+  images      ProductImage[]
+
+  @@index([categoryId, status])
+  @@index([status, createdAt])
+  @@map("products")
+}
+
+// Each sellable SKU owns its price and inventory. A simple product uses one
+// variant named "Default". options may hold {"size":"M","color":"black"}.
+model ProductVariant {
+  id              Uuid                       @id @default(uuid())
+  productId       Uuid
+  sku             String                     @unique
+  name            String                     @default("Default")
+  options         Json?
+  priceAmount     BigInt
+  compareAtAmount BigInt?
+  currency        String                     @default("VND")
+  isActive        Boolean                    @default(true)
+  archivedAt      TimestamptzString?
+  createdAt       TimestamptzString          @default(now())
+  updatedAt       temporal.updatedAtString()
+
+  product         Product                    @relation(fields:[productId], references:[id], onDelete: Restrict)
+  inventory       Inventory?
+  cartItems       CartItem[]
+  orderItems      OrderItem[]
+
+  @@index([productId, isActive])
+  @@map("product_variants")
+}
+
+model ProductImage {
+  id        Uuid              @id @default(uuid())
+  productId Uuid
+  url       String
+  altText   String?
+  position  Int               @default(0)
   createdAt TimestamptzString @default(now())
+
+  product   Product           @relation(fields:[productId], references:[id], onDelete: Cascade)
+
+  @@unique([productId, position])
+  @@map("product_images")
+}
+
+// One reusable cart per authenticated user; clear items after successful checkout.
+// Cart prices are not authoritative: validate prices/currency again at checkout.
+model Cart {
+  id        Uuid                       @id @default(uuid())
+  userId    Uuid                       @unique
+  version   Int                        @default(0)
+  createdAt TimestamptzString          @default(now())
   updatedAt temporal.updatedAtString()
+
+  user      User                       @relation(fields:[userId], references:[id], onDelete: Cascade)
+  items     CartItem[]
+
+  @@map("carts")
+}
+
+model CartItem {
+  id        Uuid                       @id @default(uuid())
+  cartId    Uuid
+  variantId Uuid
+  quantity  Int                        @default(1)
+  createdAt TimestamptzString          @default(now())
+  updatedAt temporal.updatedAtString()
+
+  cart      Cart                       @relation(fields:[cartId], references:[id], onDelete: Cascade)
+  variant   ProductVariant             @relation(fields:[variantId], references:[id], onDelete: Restrict)
+
+  @@unique([cartId, variantId])
+  @@index([variantId])
+  @@map("cart_items")
+}
+
+// One stock pool per SKU. Increase reserved atomically only when enough stock
+// remains. On sale, decrease both onHand and reserved in the same transaction.
+model Inventory {
+  id           Uuid                       @id @default(uuid())
+  variantId    Uuid                       @unique
+  onHand       Int                        @default(0)
+  reserved     Int                        @default(0)
+  version      Int                        @default(0)
+  createdAt    TimestamptzString          @default(now())
+  updatedAt    temporal.updatedAtString()
+
+  variant      ProductVariant             @relation(fields:[variantId], references:[id], onDelete: Restrict)
+  reservations InventoryReservation[]
+  movements    InventoryMovement[]
+
+  @@map("inventory")
+}
+
+// Exactly one reservation record per order item; retries reuse that record.
+// The composite FK ensures the reserved SKU matches the order item's SKU.
+model InventoryReservation {
+  id          Uuid                       @id @default(uuid())
+  orderItemId Uuid                       @unique
+  variantId   Uuid
+  quantity    Int
+  status      ReservationStatus          @default(ACTIVE)
+  version     Int                        @default(0)
+  expiresAt   TimestamptzString
+  consumedAt  TimestamptzString?
+  releasedAt  TimestamptzString?
+  createdAt   TimestamptzString          @default(now())
+  updatedAt   temporal.updatedAtString()
+
+  orderItem   OrderItem                  @relation(fields:[orderItemId, variantId], references:[id, variantId], onDelete: Restrict)
+  inventory   Inventory                  @relation(fields:[variantId], references:[variantId], onDelete: Restrict)
+
+  @@unique([orderItemId, variantId])
+  @@index([status, expiresAt])
+  @@index([variantId, status])
+  @@map("inventory_reservations")
+}
+
+// Append-only stock ledger. Deltas are signed: reserve=(0,+q), release=(0,-q),
+// sale=(-q,-q), receipt/return=(+q,0). Write alongside Inventory's update.
+// referenceType/referenceId identify the business operation; operationKey
+// deduplicates one stock effect per inventory record.
+model InventoryMovement {
+  id            Uuid                  @id @default(uuid())
+  inventoryId   Uuid
+  type          InventoryMovementType
+  onHandDelta   Int                   @default(0)
+  reservedDelta Int                   @default(0)
+  operationKey  String
+  referenceType String?
+  referenceId   String?
+  reason        String?
+  createdAt     TimestamptzString     @default(now())
+
+  inventory     Inventory             @relation(fields:[inventoryId], references:[id], onDelete: Restrict)
+
+  @@unique([inventoryId, operationKey])
+  @@index([inventoryId, createdAt])
+  @@map("inventory_movements")
+}
+
+// checkoutKey is retained even after an IdempotencyRecord expires.
+// Store immutable customer/shipping/price snapshots, not mutable address links.
+model Order {
+  id                  Uuid                       @id @default(uuid())
+  orderNumber         String                     @unique
+  userId              Uuid
+  checkoutKey         String
+  checkoutRequestHash String
+  status              OrderStatus                @default(PENDING)
+  currency            String                     @default("VND")
+  subtotalAmount      BigInt
+  discountAmount      BigInt                     @default(0)
+  shippingAmount      BigInt                     @default(0)
+  taxAmount           BigInt                     @default(0)
+  totalAmount         BigInt
+  customerEmail       String
+  recipientName       String
+  recipientPhone      String
+  addressLine1        String
+  addressLine2        String?
+  ward                String?
+  district            String?
+  city                String
+  province            String?
+  postalCode          String?
+  countryCode         String                     @default("VN")
+  note                String?
+  cancellationReason  String?
+  version             Int                        @default(0)
+  confirmedAt         TimestamptzString?
+  shippedAt           TimestamptzString?
+  deliveredAt         TimestamptzString?
+  cancelledAt         TimestamptzString?
+  createdAt           TimestamptzString          @default(now())
+  updatedAt           temporal.updatedAtString()
+
+  user                User                       @relation(fields:[userId], references:[id], onDelete: Restrict)
+  items               OrderItem[]
+  statusHistory       OrderStatusHistory[]
+  payment             Payment?
+  notifications       Notification[]
+
+  @@unique([userId, checkoutKey])
+  @@index([userId, createdAt])
+  @@index([status, createdAt])
+  @@map("orders")
+}
+
+// Monetary amounts are order-currency snapshots; lineTotal = unitPrice * quantity.
+// Order-level discounts/shipping/tax are represented on Order, not on each line.
+model OrderItem {
+  id              Uuid                  @id @default(uuid())
+  orderId         Uuid
+  variantId       Uuid
+  sku             String
+  productName     String
+  variantName     String
+  variantOptions  Json?
+  unitPriceAmount BigInt
+  quantity        Int
+  lineTotalAmount BigInt
+  createdAt       TimestamptzString     @default(now())
+
+  order           Order                 @relation(fields:[orderId], references:[id], onDelete: Restrict)
+  variant         ProductVariant        @relation(fields:[variantId], references:[id], onDelete: Restrict)
+  reservation     InventoryReservation?
+
+  @@unique([orderId, variantId])
+  @@unique([id, variantId])
+  @@index([variantId])
+  @@map("order_items")
+}
+
+// Audit history only: this is not an event-sourced Order aggregate.
+// Write history with the order status/version transition in one transaction.
+model OrderStatusHistory {
+  id         Uuid              @id @default(uuid())
+  orderId    Uuid
+  fromStatus OrderStatus?
+  toStatus   OrderStatus
+  version    Int
+  actorType  String
+  actorId    String?
+  reason     String?
+  createdAt  TimestamptzString @default(now())
+
+  order      Order             @relation(fields:[orderId], references:[id], onDelete: Restrict)
+
+  @@unique([orderId, version])
+  @@index([orderId, createdAt])
+  @@map("order_status_history")
+}
+
+// One logical payment per order; network retries reuse its idempotency key.
+// UNKNOWN means timeout/ambiguous outcome: reconcile before retrying a charge.
+// Never store card numbers, CVV, provider credentials or raw authorization data.
+model Payment {
+  id                Uuid                       @id @default(uuid())
+  orderId           Uuid                       @unique
+  provider          String                     @default("SIMULATOR")
+  providerPaymentId String?
+  idempotencyKey    String                     @unique
+  amount            BigInt
+  currency          String                     @default("VND")
+  status            PaymentStatus              @default(PENDING)
+  attemptCount      Int                        @default(0)
+  version           Int                        @default(0)
+  failureCode       String?
+  failureMessage    String?
+  nextReconcileAt   TimestamptzString?
+  paidAt            TimestamptzString?
+  failedAt          TimestamptzString?
+  createdAt         TimestamptzString          @default(now())
+  updatedAt         temporal.updatedAtString()
+
+  order             Order                      @relation(fields:[orderId], references:[id], onDelete: Restrict)
+  refunds           Refund[]
+  webhookEvents     PaymentWebhookEvent[]
+
+  @@unique([provider, providerPaymentId])
+  @@index([status, nextReconcileAt])
+  @@map("payments")
+}
+
+// Persist only signature-verified, sanitized callback payloads. paymentId may
+// be null until reconciliation resolves an early/unmatched provider callback.
+model PaymentWebhookEvent {
+  id              Uuid                       @id @default(uuid())
+  provider        String
+  providerEventId String
+  paymentId       Uuid?
+  eventType       String
+  payload         Json
+  status          ProcessingStatus           @default(PENDING)
+  attemptCount    Int                        @default(0)
+  availableAt     TimestamptzString          @default(now())
+  lockedBy        String?
+  lockedUntil     TimestamptzString?
+  lastError       String?
+  processedAt     TimestamptzString?
+  receivedAt      TimestamptzString          @default(now())
+  updatedAt       temporal.updatedAtString()
+
+  payment         Payment?                   @relation(fields:[paymentId], references:[id], onDelete: Restrict)
+
+  @@unique([provider, providerEventId])
+  @@index([paymentId])
+  @@index([status, availableAt])
+  @@index([status, lockedUntil])
+  @@map("payment_webhook_events")
+}
+
+// Multiple partial refunds are allowed. Bound their aggregate amount inside
+// a transaction locking the Payment; recheck unknown/in-flight refunds too.
+model Refund {
+  id               Uuid                       @id @default(uuid())
+  paymentId        Uuid
+  provider         String
+  providerRefundId String?
+  idempotencyKey   String                     @unique
+  amount           BigInt
+  currency         String                     @default("VND")
+  reason           String
+  status           RefundStatus               @default(PENDING)
+  attemptCount     Int                        @default(0)
+  version          Int                        @default(0)
+  lastError        String?
+  nextReconcileAt  TimestamptzString?
+  refundedAt       TimestamptzString?
+  createdAt        TimestamptzString          @default(now())
+  updatedAt        temporal.updatedAtString()
+
+  payment          Payment                    @relation(fields:[paymentId], references:[id], onDelete: Restrict)
+
+  @@unique([provider, providerRefundId])
+  @@index([paymentId, status])
+  @@index([status, nextReconcileAt])
+  @@map("refunds")
+}
+
+// scope is an operation name such as "checkout". Compare requestHash on retry;
+// a reused key with a different request must fail. responseBody is sanitized JSON
+// (serialize BigInt amounts). A PROCESSING lease must be claimed atomically.
+model IdempotencyRecord {
+  id             Uuid                       @id @default(uuid())
+  userId         Uuid
+  scope          String
+  key            String
+  requestHash    String
+  status         IdempotencyStatus          @default(PROCESSING)
+  responseStatus Int?
+  responseBody   Json?
+  lockedUntil    TimestamptzString?
+  expiresAt      TimestamptzString
+  createdAt      TimestamptzString          @default(now())
+  updatedAt      temporal.updatedAtString()
+
+  user           User                       @relation(fields:[userId], references:[id], onDelete: Restrict)
+
+  @@unique([userId, scope, key])
+  @@index([expiresAt])
+  @@map("idempotency_records")
+}
+
+// Integration outbox, not an event store. Allocate aggregateVersion under the
+// aggregate lock, with one envelope per revision. Publisher retries reuse id.
+// Claim/lease rows atomically and preserve per-aggregate order when publishing.
+model OutboxEvent {
+  id               Uuid               @id @default(uuid())
+  aggregateType    String
+  aggregateId      Uuid
+  aggregateVersion Int
+  eventType        String
+  schemaVersion    Int                @default(1)
+  payload          Json
+  correlationId    String?
+  causationId      String?
+  traceparent      String?
+  attemptCount     Int                @default(0)
+  availableAt      TimestamptzString  @default(now())
+  lockedBy         String?
+  lockedUntil      TimestamptzString?
+  lastError        String?
+  publishedAt      TimestamptzString?
+  deadLetteredAt   TimestamptzString?
+  occurredAt       TimestamptzString  @default(now())
+  createdAt        TimestamptzString  @default(now())
+
+  @@unique([aggregateType, aggregateId, aggregateVersion], map: "outbox_aggregate_version_key")
+  @@index([publishedAt, deadLetteredAt, availableAt], map: "outbox_pending_idx")
+  @@index([lockedUntil])
+  @@map("outbox_events")
+}
+
+// Insert this receipt only in the SAME transaction as the consumer's business
+// effects. Rollback removes both, so a failed attempt remains retryable.
+// No Outbox FK: events can originate from an independent producer/database.
+model InboxEvent {
+  id          Uuid              @id @default(uuid())
+  consumer    String
+  eventId     String
+  eventType   String
+  processedAt TimestamptzString @default(now())
+
+  @@unique([consumer, eventId])
+  @@index([processedAt])
+  @@map("inbox_events")
+}
+
+// Start with a simulated sink. deduplicationKey identifies the business effect,
+// e.g. order-confirmed:<orderId>:<recipient>. Provider sends need idempotency too.
+model Notification {
+  id                Uuid                       @id @default(uuid())
+  userId            Uuid
+  orderId           Uuid?
+  channel           NotificationChannel        @default(IN_APP)
+  deduplicationKey  String
+  template          String
+  recipient         String
+  payload           Json
+  status            NotificationStatus         @default(PENDING)
+  attemptCount      Int                        @default(0)
+  availableAt       TimestamptzString          @default(now())
+  lockedBy          String?
+  lockedUntil       TimestamptzString?
+  providerMessageId String?
+  lastError         String?
+  sentAt            TimestamptzString?
+  readAt            TimestamptzString?
+  createdAt         TimestamptzString          @default(now())
+  updatedAt         temporal.updatedAtString()
+
+  user              User                       @relation(fields:[userId], references:[id], onDelete: Restrict)
+  order             Order?                     @relation(fields:[orderId], references:[id], onDelete: Restrict)
+
+  @@unique([channel, deduplicationKey])
+  @@index([userId, createdAt])
+  @@index([orderId])
+  @@index([status, availableAt])
+  @@index([status, lockedUntil])
+  @@map("notifications")
 }
