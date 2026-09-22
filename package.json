@@ -3,7 +3,7 @@
   "type": "module",
   "version": "0.0.1",
   "description": "",
-  "author": "",
+  "author": "Mile",
   "private": true,
   "license": "UNLICENSED",
   "scripts": {
@@ -12,15 +12,21 @@
     "start": "nest start",
     "start:dev": "nest start --watch",
     "start:debug": "nest start --debug --watch",
-    "start:prod": "node dist/main",
-    "lint": "eslint \"{src,apps,libs,test}/**/*.ts\" --fix",
-    "test": "jest",
-    "test:watch": "jest --watch",
-    "test:cov": "jest --coverage",
-    "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
-    "test:e2e": "jest --config ./test/jest-e2e.json",
     "postinstall": "prisma skills sync || exit 0",
-    "contract:emit": "prisma contract emit"
+    "contract:emit": "prisma contract emit",
+    "typecheck": "tsc --noEmit --incremental false",
+    "test:watch": "node --experimental-vm-modules ./node_modules/jest/bin/jest.js --watch",
+    "lint": "eslint \"{src,test}/**/*.ts\"",
+    "seed": "tsx src/infrastructure/database/seeds/run-seed.ts",
+    "test:e2e": "node --experimental-vm-modules ./node_modules/jest/bin/jest.js --config ./test/jest-e2e.json --runInBand",
+    "prebuild": "pnpm run contract:emit",
+    "test": "node --experimental-vm-modules ./node_modules/jest/bin/jest.js",
+    "test:debug": "node --inspect-brk --experimental-vm-modules ./node_modules/jest/bin/jest.js --runInBand",
+    "test:db:down": "docker compose -p ecommerce-catalog-test -f test/docker-compose.yml down",
+    "test:db:up": "docker compose -p ecommerce-catalog-test -f test/docker-compose.yml up -d --wait",
+    "start:prod": "node dist/main.js",
+    "test:integration": "node --experimental-vm-modules ./node_modules/jest/bin/jest.js --config ./test/jest-integration.config.cjs --runInBand",
+    "test:cov": "node --experimental-vm-modules ./node_modules/jest/bin/jest.js --coverage"
   },
   "dependencies": {
     "@nestjs/common": "^11.0.1",
@@ -28,6 +34,8 @@
     "@nestjs/core": "^11.0.1",
     "@nestjs/platform-express": "^11.0.1",
     "@prisma/orm-postgres": "8.0.0-rc.11",
+    "class-transformer": "^0.5.1",
+    "class-validator": "^0.15.1",
     "dotenv": "^18.0.2",
     "env": "^0.0.2",
     "reflect-metadata": "^0.2.2",
@@ -57,24 +65,8 @@
     "ts-loader": "^9.5.2",
     "ts-node": "^10.9.2",
     "tsconfig-paths": "^4.2.0",
+    "tsx": "^4.23.15",
     "typescript": "^5.7.3",
     "typescript-eslint": "^8.20.0"
-  },
-  "jest": {
-    "moduleFileExtensions": [
-      "js",
-      "json",
-      "ts"
-    ],
-    "rootDir": "src",
-    "testRegex": ".*\\.spec\\.ts$",
-    "transform": {
-      "^.+\\.(t|j)s$": "ts-jest"
-    },
-    "collectCoverageFrom": [
-      "**/*.(t|j)s"
-    ],
-    "coverageDirectory": "../coverage",
-    "testEnvironment": "node"
   }
 }
