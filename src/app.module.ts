@@ -4,11 +4,13 @@ import { ConfigModule } from '@nestjs/config';
 import { AppController } from './app.controller.js';
 import { AppService } from './app.service.js';
 import { CatalogModule } from './modules/catalog/catalog.module.js';
+import { CartModule } from './modules/cart/cart.module.js';
 
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true, cache: true }),
     CatalogModule,
+    CartModule,
   ],
   controllers: [AppController],
   providers: [

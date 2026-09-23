@@ -33,6 +33,7 @@
     "@nestjs/config": "^12.0.0",
     "@nestjs/core": "^11.0.1",
     "@nestjs/platform-express": "^11.0.1",
+    "@nestjs/swagger": "^11.4.7",
     "@prisma/orm-postgres": "8.0.0-rc.11",
     "class-transformer": "^0.5.1",
     "class-validator": "^0.15.1",
@@ -68,5 +69,11 @@
     "tsx": "^4.23.15",
     "typescript": "^5.7.3",
     "typescript-eslint": "^8.20.0"
+  },
+  "imports": {
+    "#config/*": "./src/config/*.js",
+    "#common/*": "./src/common/*.js",
+    "#infrastructure/*": "./src/infrastructure/*.js",
+    "#modules/*": "./src/modules/*.js"
   }
 }
