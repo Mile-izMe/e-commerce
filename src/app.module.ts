@@ -5,12 +5,16 @@ import { AppController } from './app.controller.js';
 import { AppService } from './app.service.js';
 import { CatalogModule } from './modules/catalog/catalog.module.js';
 import { CartModule } from './modules/cart/cart.module.js';
+import { AuthModule } from './modules/auth/auth.module.js';
+import { UsersModule } from './modules/users/user.module.js';
 
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true, cache: true }),
     CatalogModule,
     CartModule,
+    UsersModule,
+    AuthModule,
   ],
   controllers: [AppController],
   providers: [

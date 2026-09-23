@@ -36,6 +36,8 @@ describe('Catalog HTTP integration (real PostgreSQL)', () => {
   const preciseAmount = 9007199254740993n;
 
   beforeAll(async () => {
+    process.env.JWT_SECRET ??=
+      'local-integration-test-secret-with-at-least-32-bytes';
     const testUrl = process.env.TEST_DATABASE_URL;
     if (!testUrl)
       throw new Error(

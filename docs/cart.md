@@ -20,17 +20,14 @@ Request DTO và response DTO được hiển thị trong Swagger `/api`.
 
 ## Danh tính người dùng
 
-Dự án chưa triển khai đăng nhập hoặc xác thực JWT/session. CartUserGuard **chỉ kiểm tra
-danh tính đã có**, không phải bộ xác thực token. Tất cả Cart endpoint trả 401 cho đến
-khi middleware hoặc guard xác thực đáng tin cậy gắn `request.user = { id: userId }`.
-Nếu dùng JWT guard, nó phải xác minh chữ ký, thời hạn và chạy trước CartUserGuard;
-map subject đã xác thực sang `user.id`. Không chỉ decode JWT rồi tin payload.
+Các endpoint Cart dùng AuthGuard xác minh Bearer JWT, lấy `sub` và đọc trạng thái user
+hiện tại từ database. Token đăng ký/đăng nhập của `/auth` dùng trực tiếp được ở đây.
+JWT không hợp lệ/hết hạn trả 401; user bị SUSPENDED trả 403. Xem `docs/auth-users.md`.
 
 Không nhận userId/cartId từ body, query hay header để chọn giỏ. Các field ngoài DTO
 trong body bị từ chối. User không tồn tại/đã xóa mềm trả 401; user không ACTIVE trả 403. PATCH/DELETE item không thuộc giỏ hiện tại trả 404.
 
-Integration test có middleware xác thực giả chỉ tồn tại trong file test, dùng token
-ngẫu nhiên map đến fixture user. Không có đường tắt xác thực trong application.
+Integration test dùng JWT ký thật cho fixture user. Không có đường tắt xác thực.
 
 ## Quy tắc nghiệp vụ
 

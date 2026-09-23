@@ -9,6 +9,8 @@ describe('AppController (e2e)', () => {
   let app: INestApplication<App>;
 
   beforeAll(async () => {
+    process.env.JWT_SECRET ??=
+      'local-integration-test-secret-with-at-least-32-bytes';
     const moduleFixture = await Test.createTestingModule({
       imports: [AppModule],
     })

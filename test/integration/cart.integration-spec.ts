@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 import type { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
-import type { NextFunction, Request, Response } from 'express';
+import { JwtService } from '@nestjs/jwt';
 import request from 'supertest';
 import type { App } from 'supertest/types.js';
 import { AppModule } from '../../src/app.module.js';
@@ -23,6 +23,7 @@ describe('Cart HTTP integration (real PostgreSQL)', () => {
   let app: INestApplication<App> | undefined;
   let database: DatabaseClient;
   let repository: CartRepository;
+  let jwt: JwtService;
   let userId: string;
   let token: string;
   let productId: string;
@@ -30,7 +31,6 @@ describe('Cart HTTP integration (real PostgreSQL)', () => {
   let secondVariantId: string;
   const userIds: string[] = [];
   const variantIds: string[] = [];
-  const identities = new Map<string, string>();
   const prefix = `cart-it-${randomUUID()}`;
   const price = 9007199254740993n;
 
@@ -50,12 +50,13 @@ describe('Cart HTTP integration (real PostgreSQL)', () => {
       passwordHash: 'test-only-unused',
     });
     userIds.push(user.id);
-    const authToken = randomUUID();
-    identities.set(authToken, user.id);
+    const authToken = await jwt.signAsync({ sub: user.id });
     return { id: user.id, token: authToken };
   }
 
   beforeAll(async () => {
+    process.env.JWT_SECRET ??=
+      'local-integration-test-secret-with-at-least-32-bytes';
     const testUrl = process.env.TEST_DATABASE_URL;
     if (!testUrl)
       throw new Error(
@@ -118,21 +119,8 @@ describe('Cart HTTP integration (real PostgreSQL)', () => {
       .useValue(database)
       .compile();
     repository = module.get(CartRepository);
+    jwt = module.get(JwtService);
     app = module.createNestApplication();
-    // Test-only authentication fixture. Production does not accept these tokens
-    // or any user-id header; the real CartUserGuard remains enabled in this suite.
-    app.use(
-      (
-        req: Request & { user?: { id: string } },
-        _res: Response,
-        next: NextFunction,
-      ) => {
-        const match = /^Bearer (.+)$/.exec(req.headers.authorization ?? '');
-        const id = match ? identities.get(match[1]) : undefined;
-        if (id) req.user = { id };
-        next();
-      },
-    );
     await app.init();
   });
 
@@ -552,7 +540,7 @@ describe('Cart HTTP integration (real PostgreSQL)', () => {
     });
     await get().expect(401);
     await add().expect(401);
-    identities.set(token, randomUUID());
+    token = await jwt.signAsync({ sub: randomUUID() });
     await get().expect(401);
     await add().expect(401);
   });

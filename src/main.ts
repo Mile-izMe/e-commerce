@@ -10,7 +10,7 @@ async function bootstrap() {
     .setDescription('E-Commerce API with NestJS')
     .setVersion('1.0')
     .addTag('E-Commerce')
-    // .addBearerAuth()
+    .addBearerAuth()
     .build();
 
   const documentFactory = () => SwaggerModule.createDocument(app, config);
