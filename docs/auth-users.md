@@ -76,6 +76,8 @@ Luôn đặt `AuthGuard` trước `RolesGuard` để request.user đã được 
 | DELETE | `/users/me/addresses/:addressId` | Không                                                                    | 204                    |
 
 `AuthResponseDto` gồm `{ accessToken, refreshToken, tokenType: "Bearer", expiresIn: 900, user }`.
+Các response 200/201 đặt DTO này trong trường `data` của
+[response chung](api-response.md). Hai endpoint trả 204 không có body.
 Refresh token là chuỗi ngẫu nhiên, sống 7 ngày; database chỉ lưu SHA-256 hash
 của nó trong `UserSession`. Mỗi lần login/đăng ký tạo một session riêng.
 `POST /auth/refresh` không dùng access token: nó kiểm tra refresh token trong

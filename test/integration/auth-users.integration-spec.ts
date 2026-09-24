@@ -37,7 +37,7 @@ describe('Auth and Users HTTP integration (real PostgreSQL)', () => {
     });
     if (response.status !== 201)
       throw new Error(`Registration failed: ${JSON.stringify(response.body)}`);
-    const auth = response.body as AuthResponseDto;
+    const auth = response.body.data as AuthResponseDto;
     userIds.push(auth.user.id);
     return { auth, email, username };
   }
@@ -118,7 +118,7 @@ describe('Auth and Users HTTP integration (real PostgreSQL)', () => {
       .get('/users/me')
       .auth(auth.accessToken, { type: 'bearer' })
       .expect(200);
-    expect(profile.body).toEqual(auth.user);
+    expect(profile.body.data).toEqual(auth.user);
     expect(JSON.stringify(profile.body)).not.toContain('passwordHash');
   });
 
@@ -140,8 +140,8 @@ describe('Auth and Users HTTP integration (real PostgreSQL)', () => {
       .post('/auth/login')
       .send({ identifier: email.toUpperCase(), password })
       .expect(200);
-    expect((byName.body as AuthResponseDto).user.id).toBe(auth.user.id);
-    expect((byEmail.body as AuthResponseDto).user.id).toBe(auth.user.id);
+    expect((byName.body.data as AuthResponseDto).user.id).toBe(auth.user.id);
+    expect((byEmail.body.data as AuthResponseDto).user.id).toBe(auth.user.id);
     const stored = await database.orm.public.User.where({
       id: auth.user.id,
     }).first();
@@ -160,7 +160,7 @@ describe('Auth and Users HTTP integration (real PostgreSQL)', () => {
       .post('/auth/refresh')
       .send({ refreshToken: auth.refreshToken })
       .expect(200);
-    const next = refreshed.body as AuthResponseDto;
+    const next = refreshed.body.data as AuthResponseDto;
     expect(next.user.id).toBe(auth.user.id);
     expect(next.refreshToken).not.toBe(auth.refreshToken);
     await http()
@@ -186,12 +186,13 @@ describe('Auth and Users HTTP integration (real PostgreSQL)', () => {
     expect(responses.map((response) => response.status).sort()).toEqual([
       200, 401,
     ]);
-    const next = responses.find((response) => response.status === 200)!
-      .body as AuthResponseDto;
-    await http()
+    const next = responses.find((response) => response.status === 200)!.body
+      .data as AuthResponseDto;
+    const logout = await http()
       .post('/auth/logout')
       .send({ refreshToken: next.refreshToken })
       .expect(204);
+    expect(logout.text).toBe('');
     await http()
       .post('/auth/refresh')
       .send({ refreshToken: next.refreshToken })
@@ -204,7 +205,7 @@ describe('Auth and Users HTTP integration (real PostgreSQL)', () => {
       .post('/auth/login')
       .send({ identifier: email, password })
       .expect(200);
-    const other = login.body as AuthResponseDto;
+    const other = login.body.data as AuthResponseDto;
     expect(other.refreshToken).not.toBe(auth.refreshToken);
     await http()
       .post('/auth/logout')
@@ -263,7 +264,7 @@ describe('Auth and Users HTTP integration (real PostgreSQL)', () => {
     const changed = await bearer('/users/me')
       .send({ name: 'New name', phone: '+84901234567' })
       .expect(200);
-    expect(changed.body).toMatchObject({
+    expect(changed.body.data).toMatchObject({
       name: 'New name',
       phone: '+84901234567',
       role: 'CUSTOMER',
@@ -275,7 +276,7 @@ describe('Auth and Users HTTP integration (real PostgreSQL)', () => {
     const cleared = await bearer('/users/me')
       .send({ name: null, phone: null })
       .expect(200);
-    expect(cleared.body).toMatchObject({
+    expect(cleared.body.data).toMatchObject({
       name: null,
       phone: null,
       role: 'CUSTOMER',
@@ -289,7 +290,7 @@ describe('Auth and Users HTTP integration (real PostgreSQL)', () => {
       path: string,
     ) => http()[method](path).auth(auth.accessToken, { type: 'bearer' });
     const empty = await bearer('get', '/users/me/addresses').expect(200);
-    expect(empty.body).toEqual([]);
+    expect(empty.body.data).toEqual([]);
     const created = await bearer('post', '/users/me/addresses')
       .send({
         recipientName: 'Alice',
@@ -299,21 +300,21 @@ describe('Auth and Users HTTP integration (real PostgreSQL)', () => {
         countryCode: 'vn',
       })
       .expect(201);
-    expect(created.body).toMatchObject({
+    expect(created.body.data).toMatchObject({
       userId: auth.user.id,
       city: 'Da Nang',
       countryCode: 'VN',
     });
-    const addressId = (created.body as { id: string }).id;
+    const addressId = (created.body.data as { id: string }).id;
     const listed = await bearer('get', '/users/me/addresses').expect(200);
-    expect(listed.body).toHaveLength(1);
+    expect(listed.body.data).toHaveLength(1);
     const updated = await bearer('patch', `/users/me/addresses/${addressId}`)
       .send({ city: 'Ha Noi', label: 'Home' })
       .expect(200);
-    expect(updated.body).toMatchObject({ city: 'Ha Noi', label: 'Home' });
+    expect(updated.body.data).toMatchObject({ city: 'Ha Noi', label: 'Home' });
     await bearer('delete', `/users/me/addresses/${addressId}`).expect(204);
     expect(
-      (await bearer('get', '/users/me/addresses').expect(200)).body,
+      (await bearer('get', '/users/me/addresses').expect(200)).body.data,
     ).toEqual([]);
     await bearer('delete', `/users/me/addresses/${addressId}`).expect(404);
   });
@@ -331,14 +332,14 @@ describe('Auth and Users HTTP integration (real PostgreSQL)', () => {
         city: 'Da Nang',
       })
       .expect(201);
-    const id = (created.body as { id: string }).id;
+    const id = (created.body.data as { id: string }).id;
     expect(
       (
         await http()
           .get('/users/me/addresses')
           .auth(outsider.auth.accessToken, { type: 'bearer' })
           .expect(200)
-      ).body,
+      ).body.data,
     ).toEqual([]);
     await http()
       .patch(`/users/me/addresses/${id}`)
@@ -355,7 +356,7 @@ describe('Auth and Users HTTP integration (real PostgreSQL)', () => {
           .get('/users/me/addresses')
           .auth(owner.auth.accessToken, { type: 'bearer' })
           .expect(200)
-      ).body,
+      ).body.data,
     ).toHaveLength(1);
   });
 
@@ -394,7 +395,7 @@ describe('Auth and Users HTTP integration (real PostgreSQL)', () => {
         city: 'Da Nang',
       })
       .expect(201);
-    const id = (created.body as { id: string }).id;
+    const id = (created.body.data as { id: string }).id;
     await http()
       .patch(`/users/me/addresses/${id}`)
       .auth(auth.accessToken, { type: 'bearer' })
@@ -494,7 +495,7 @@ describe('Auth and Users HTTP integration (real PostgreSQL)', () => {
       201, 409,
     ]);
     const winner = requests.find((response) => response.status === 201);
-    userIds.push((winner!.body as AuthResponseDto).user.id);
+    userIds.push((winner!.body.data as AuthResponseDto).user.id);
     expect(await database.orm.public.User.where({ email }).all()).toHaveLength(
       1,
     );

@@ -76,6 +76,7 @@
     "#config/*": "./src/config/*.js",
     "#common/*": "./src/common/*.js",
     "#infrastructure/*": "./src/infrastructure/*.js",
-    "#modules/*": "./src/modules/*.js"
+    "#modules/*": "./src/modules/*.js",
+    "#exception/*": "./src/common/exceptions/*.js"
   }
 }

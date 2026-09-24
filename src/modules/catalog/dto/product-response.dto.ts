@@ -21,8 +21,3 @@ export interface ProductResponseDto {
     availableQuantity: number;
   }[];
 }
-
-export interface ProductListResponseDto {
-  data: ProductResponseDto[];
-  meta: { page: number; limit: number; total: number; totalPages: number };
-}

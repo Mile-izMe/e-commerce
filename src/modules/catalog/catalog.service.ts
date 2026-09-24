@@ -1,27 +1,75 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
+import { isUUID } from 'class-validator';
+import {
+  CursorPage,
+  decodeCursor,
+  encodeCursor,
+  paginateCursor,
+} from '../../common/api/cursor-pagination.js';
 import { ProductRepository } from './repositories/product.repository.js';
 import type { CatalogProduct } from './entities/catalog-product.js';
 import type { ListProductsQueryDto } from './dto/list-products-query.dto.js';
-import type {
-  ProductListResponseDto,
-  ProductResponseDto,
-} from './dto/product-response.dto.js';
+import type { ProductResponseDto } from './dto/product-response.dto.js';
+
+interface ProductCursor {
+  v: 1;
+  createdAt: string;
+  id: string;
+  category: string | null;
+}
+
+function parseProductCursor(
+  value: string,
+  category: string | null,
+): ProductCursor {
+  const decoded = decodeCursor(value);
+  if (
+    typeof decoded !== 'object' ||
+    decoded === null ||
+    !('v' in decoded) ||
+    decoded.v !== 1 ||
+    !('createdAt' in decoded) ||
+    typeof decoded.createdAt !== 'string' ||
+    Number.isNaN(Date.parse(decoded.createdAt)) ||
+    !('id' in decoded) ||
+    typeof decoded.id !== 'string' ||
+    !isUUID(decoded.id) ||
+    !('category' in decoded) ||
+    decoded.category !== category
+  ) {
+    throw new BadRequestException('Invalid cursor');
+  }
+  return decoded as unknown as ProductCursor;
+}
 
 @Injectable()
 export class CatalogService {
   constructor(private readonly products: ProductRepository) {}
 
-  async list(query: ListProductsQueryDto): Promise<ProductListResponseDto> {
-    const { products, total } = await this.products.findPage(query);
-    return {
-      data: products.map((product) => this.toResponse(product)),
-      meta: {
-        page: query.page,
-        limit: query.limit,
-        total,
-        totalPages: Math.ceil(total / query.limit),
-      },
-    };
+  async list(
+    query: ListProductsQueryDto,
+  ): Promise<CursorPage<ProductResponseDto>> {
+    const category = query.category ?? null;
+    const after = query.cursor
+      ? parseProductCursor(query.cursor, category)
+      : undefined;
+    const page = await paginateCursor(
+      query.limit,
+      (take) =>
+        this.products.findPage({ take, category: query.category, after }),
+      (product) =>
+        encodeCursor({
+          v: 1,
+          createdAt: product.createdAt,
+          id: product.id,
+          category,
+        } satisfies ProductCursor),
+    );
+    return page.map((product) => this.toResponse(product));
   }
 
   async detail(slug: string): Promise<ProductResponseDto> {

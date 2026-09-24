@@ -39,7 +39,7 @@ TypeScript dùng đuôi `.js` để Node chạy trực tiếp code đã biên d�
 ## API
 
 ```powershell
-curl.exe "http://localhost:3000/products?page=1&limit=5"
+curl.exe "http://localhost:3000/products?limit=5"
 curl.exe "http://localhost:3000/products?category=demo-clothing"
 curl.exe "http://localhost:3000/products/demo-cotton-t-shirt"
 ```
@@ -48,13 +48,16 @@ curl.exe "http://localhost:3000/products/demo-cotton-t-shirt"
 
 | Query      | Mặc định | Giới hạn                        |
 | ---------- | -------- | ------------------------------- |
-| `page`     | 1        | Số nguyên 1–10000               |
 | `limit`    | 20       | Số nguyên 1–100                 |
+| `cursor`   | Không    | Cursor do trang trước trả về    |
 | `category` | Tất cả   | Category slug, tối đa 120 ký tự |
 
-Response: `{ data: Product[], meta: { page, limit, total, totalPages } }`.
-Sắp xếp theo `createdAt DESC, id ASC`; ID làm thứ tự phụ khi trùng thời gian.
-Category không tồn tại hoặc page vượt giới hạn dữ liệu trả `data: []`.
+Response: `{ success: true, message, data: Product[], timestamp, meta: { nextCursor, hasMore, limit } }`.
+Gọi lần đầu không có `cursor`; nếu `hasMore = true`, gửi `nextCursor`
+trong lần gọi tiếp theo với cùng `category`. Sắp xếp theo
+`createdAt DESC, id ASC`; ID làm thứ tự phụ khi trùng thời gian.
+Category không tồn tại trả `data: []`, `nextCursor: null`.
+Cursor không hợp lệ hoặc dùng với category khác trả HTTP 400.
 Query không hợp lệ hoặc tham số không được hỗ trợ trả HTTP 400.
 
 Sản phẩm chỉ xuất hiện khi `status = ACTIVE`, `archivedAt = null` và có ít nhất
@@ -65,7 +68,8 @@ trạng thái bán được quản lý bằng Product/Variant.
 
 ### GET /products/:slug
 
-Trả chi tiết với category, ảnh theo `position` và các variant hợp lệ theo SKU.
+Trả `{ success: true, message, data: Product, timestamp }` với category,
+ảnh theo `position` và các variant hợp lệ theo SKU.
 Sản phẩm không tồn tại, draft, archived hoặc không có variant hợp lệ trả 404.
 Slug không đúng định dạng trả 400.
 
@@ -77,8 +81,10 @@ vì có thể mất chính xác. `compareAtAmount` có thể là null.
 phải đọc/giữ hàng bằng transaction, không tin số lượng từ response Catalog.
 API dùng response DTO rõ ràng, không trả trực tiếp ORM record hoặc cột nội bộ.
 
-Tổng số và dữ liệu trang là hai truy vấn; khi có cập nhật đồng thời chúng có thể
-lệch nhẹ. Đây là API browse catalog, chưa cung cấp snapshot pagination.
+Cursor pagination tránh lệch vị trí do sản phẩm mới được thêm trước trang hiện
+tại. Đây vẫn là API browse, không cung cấp snapshot dữ liệu: sản phẩm đổi trạng
+thái hoặc bị xóa giữa hai lần gọi có thể làm kết quả thay đổi. Xem thêm
+[quy ước response](api-response.md).
 
 ## Kiểm tra
 
@@ -108,6 +114,6 @@ seed tồn tại đến khi container test được tắt.
 Nếu dùng test database riêng khác, tên database phải kết thúc bằng `_test` và
 phải khác database development. Không trỏ `TEST_DATABASE_URL` vào dữ liệu thật.
 
-Các tình huống được kiểm tra: phân trang ổn định, tổng theo category, page rỗng,
+Các tình huống được kiểm tra: cursor ổn định, lọc category, danh sách rỗng,
 lọc draft/archived và variant ẩn, 404, validation query, thứ tự ảnh, tính tồn khả dụng,
 giá tiền vượt `Number.MAX_SAFE_INTEGER`, seed lặp lại và giữ nguyên tồn kho.

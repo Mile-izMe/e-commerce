@@ -13,8 +13,9 @@ chỉ có một CartItem trong giỏ nhờ unique `(cartId, variantId)`.
 | DELETE | `/cart/items/:itemId` | Không                                      | Xóa item thuộc giỏ của user         |
 | DELETE | `/cart/items`         | Không                                      | Xóa tất cả item, giữ lại Cart       |
 
-Các thao tác thành công trả HTTP 200 và toàn bộ `CartResponseDto`.
-Giỏ chưa tồn tại trả `{ "id": null, "version": 0, "totalQuantity": 0, "items": [] }`.
+Các thao tác thành công trả HTTP 200 với `CartResponseDto` trong trường
+`data` của [response chung](api-response.md). Giỏ chưa tồn tại có
+`data: { "id": null, "version": 0, "totalQuantity": 0, "items": [] }`.
 `itemId` trên URL là ID CartItem, khác `variantId` trong body khi thêm.
 Request DTO và response DTO được hiển thị trong Swagger `/api`.
 

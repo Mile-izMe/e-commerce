@@ -1,5 +1,7 @@
 import { Module, ValidationPipe } from '@nestjs/common';
-import { APP_PIPE } from '@nestjs/core';
+import { APP_FILTER, APP_INTERCEPTOR, APP_PIPE } from '@nestjs/core';
+import { GlobalExceptionFilter } from './common/exceptions/global-exception.filter.js';
+import { SuccessResponseInterceptor } from './common/api/success-response.interceptor.js';
 import { ConfigModule } from '@nestjs/config';
 import { AppController } from './app.controller.js';
 import { AppService } from './app.service.js';
@@ -19,6 +21,8 @@ import { UsersModule } from './modules/users/user.module.js';
   controllers: [AppController],
   providers: [
     AppService,
+    { provide: APP_FILTER, useClass: GlobalExceptionFilter },
+    { provide: APP_INTERCEPTOR, useClass: SuccessResponseInterceptor },
     {
       provide: APP_PIPE,
       useFactory: () =>

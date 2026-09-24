@@ -20,7 +20,7 @@ export class ProductRepository {
 
   private withDetails(query: ReturnType<ProductRepository['visibleProducts']>) {
     return query
-      .select('id', 'name', 'slug', 'description')
+      .select('id', 'name', 'slug', 'description', 'createdAt')
       .include('category', (category) => category.select('id', 'name', 'slug'))
       .include('images', (images) =>
         images
@@ -48,13 +48,10 @@ export class ProductRepository {
   }
 
   async findPage(options: {
-    page: number;
-    limit: number;
+    take: number;
     category?: string;
-  }): Promise<{
-    products: CatalogProduct[];
-    total: number;
-  }> {
+    after?: { createdAt: string; id: string };
+  }): Promise<CatalogProduct[]> {
     let query = this.visibleProducts();
 
     if (options.category) {
@@ -63,23 +60,17 @@ export class ProductRepository {
       })
         .select('id')
         .first();
-      if (!category) return { products: [], total: 0 };
+      if (!category) return [];
       query = query.where({ categoryId: category.id });
     }
 
-    const [products, totals] = await Promise.all([
-      this.withDetails(query)
-        .orderBy([
-          (product) => product.createdAt.desc(),
-          (product) => product.id.asc(),
-        ])
-        .offset((options.page - 1) * options.limit)
-        .limit(options.limit)
-        .all(),
-      query.aggregate((aggregate) => ({ total: aggregate.count() })),
+    const ordered = this.withDetails(query).orderBy([
+      (product) => product.createdAt.desc(),
+      (product) => product.id.asc(),
     ]);
-
-    return { products, total: totals.total };
+    return options.after
+      ? ordered.cursor(options.after).limit(options.take).all()
+      : ordered.limit(options.take).all();
   }
 
   async findBySlug(slug: string): Promise<CatalogProduct | null> {

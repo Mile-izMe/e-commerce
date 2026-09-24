@@ -13,7 +13,6 @@ import {
 } from '@nestjs/common';
 import {
   ApiOperation,
-  ApiOkResponse,
   ApiBearerAuth,
   ApiTags,
   ApiUnauthorizedResponse,
@@ -24,6 +23,8 @@ import { UpdateCartItemDto } from './dto/update-cart-item.dto.js';
 import { AuthGuard } from '../auth/guards/auth.guard.js';
 import type { AuthenticatedRequest } from '../auth/guards/auth.guard.js';
 import { CartResponseDto } from './dto/cart-response.dto.js';
+import { SuccessMessage } from '../../common/api/success-message.decorator.js';
+import { ApiWrappedResponse } from '../../common/api/api-success.decorator.js';
 
 @ApiTags('Cart')
 @ApiBearerAuth()
@@ -36,14 +37,16 @@ export class CartController {
   constructor(private readonly cart: CartService) {}
 
   @Get()
-  @ApiOkResponse({ type: CartResponseDto })
+  @SuccessMessage('Cart retrieved')
+  @ApiWrappedResponse(CartResponseDto)
   @ApiOperation({ summary: 'Get the current user cart' })
   getCart(@Req() request: AuthenticatedRequest): Promise<CartResponseDto> {
     return this.cart.getCart(request.user.id);
   }
 
   @Post('items')
-  @ApiOkResponse({ type: CartResponseDto })
+  @SuccessMessage('Item added to cart')
+  @ApiWrappedResponse(CartResponseDto)
   @HttpCode(200)
   @ApiOperation({
     summary: 'Add quantity to a variant in the current user cart',
@@ -56,7 +59,8 @@ export class CartController {
   }
 
   @Patch('items/:itemId')
-  @ApiOkResponse({ type: CartResponseDto })
+  @SuccessMessage('Cart item updated')
+  @ApiWrappedResponse(CartResponseDto)
   @ApiOperation({ summary: 'Set the absolute quantity of a cart item' })
   updateItem(
     @Req() request: AuthenticatedRequest,
@@ -67,7 +71,8 @@ export class CartController {
   }
 
   @Delete('items/:itemId')
-  @ApiOkResponse({ type: CartResponseDto })
+  @SuccessMessage('Cart item removed')
+  @ApiWrappedResponse(CartResponseDto)
   @ApiOperation({ summary: 'Remove an item from the current user cart' })
   removeItem(
     @Req() request: AuthenticatedRequest,
@@ -77,7 +82,8 @@ export class CartController {
   }
 
   @Delete('items')
-  @ApiOkResponse({ type: CartResponseDto })
+  @SuccessMessage('Cart cleared')
+  @ApiWrappedResponse(CartResponseDto)
   @ApiOperation({ summary: 'Clear the current user cart' })
   clearCart(@Req() request: AuthenticatedRequest): Promise<CartResponseDto> {
     return this.cart.clearCart(request.user.id);

@@ -1,34 +1,9 @@
-import { Transform } from 'class-transformer';
-import {
-  IsInt,
-  IsOptional,
-  IsString,
-  Matches,
-  Max,
-  MaxLength,
-  Min,
-} from 'class-validator';
+import { IsOptional, IsString, Matches, MaxLength } from 'class-validator';
+import { ApiPropertyOptional } from '@nestjs/swagger';
+import { CursorPaginationQueryDto } from '../../../common/api/cursor-pagination.query.js';
 
-function integerQuery(value: unknown): unknown {
-  // Reject arrays, decimals and scientific notation instead of truncating them.
-  return typeof value === 'string' && /^\d+$/.test(value)
-    ? Number(value)
-    : value;
-}
-
-export class ListProductsQueryDto {
-  @Transform(({ value }: { value: unknown }) => integerQuery(value))
-  @IsInt()
-  @Min(1)
-  @Max(10_000)
-  page = 1;
-
-  @Transform(({ value }: { value: unknown }) => integerQuery(value))
-  @IsInt()
-  @Min(1)
-  @Max(100)
-  limit = 20;
-
+export class ListProductsQueryDto extends CursorPaginationQueryDto {
+  @ApiPropertyOptional({ description: 'Category slug' })
   @IsOptional()
   @IsString()
   @MaxLength(120)

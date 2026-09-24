@@ -15,10 +15,15 @@ import {
 } from '../../src/infrastructure/database/seeds/catalog.seed.js';
 import { createDatabase } from '../../src/prisma/db.js';
 import type { DatabaseClient } from '../../src/prisma/db.js';
-import type {
-  ProductListResponseDto,
-  ProductResponseDto,
-} from '../../src/modules/catalog/dto/product-response.dto.js';
+import type { ProductResponseDto } from '../../src/modules/catalog/dto/product-response.dto.js';
+
+interface ProductListEnvelope {
+  success: boolean;
+  message: string;
+  timestamp: string;
+  data: ProductResponseDto[];
+  meta: { nextCursor: string | null; hasMore: boolean; limit: number };
+}
 
 const root = fileURLToPath(new URL('../../', import.meta.url));
 const require = createRequire(import.meta.url);
@@ -209,20 +214,25 @@ describe('Catalog HTTP integration (real PostgreSQL)', () => {
     }
   });
 
-  it('paginates active products with stable ordering and accurate filtered totals', async () => {
+  it('paginates active products with a stable cursor', async () => {
     const first = await request(app!.getHttpServer())
       .get('/products')
-      .query({ category: categorySlug, page: 1, limit: 2 })
+      .query({ category: categorySlug, limit: 2 })
       .expect(200);
+    const a = first.body as ProductListEnvelope;
+    expect(a.success).toBe(true);
+    expect(a.message).toBe('Products retrieved');
+    expect(a.timestamp).toEqual(expect.any(String));
+    expect(a.meta).toMatchObject({ hasMore: true, limit: 2 });
+    expect(a.meta.nextCursor).toEqual(expect.any(String));
     const second = await request(app!.getHttpServer())
       .get('/products')
-      .query({ category: categorySlug, page: 2, limit: 2 })
+      .query({ category: categorySlug, cursor: a.meta.nextCursor, limit: 2 })
       .expect(200);
-    const a = first.body as ProductListResponseDto;
-    const b = second.body as ProductListResponseDto;
-    expect(a.meta).toEqual({ page: 1, limit: 2, total: 3, totalPages: 2 });
+    const b = second.body as ProductListEnvelope;
     expect(a.data).toHaveLength(2);
     expect(b.data).toHaveLength(1);
+    expect(b.meta).toEqual({ nextCursor: null, hasMore: false, limit: 2 });
     const received = [...a.data, ...b.data].map((product) => product.id);
     expect(received).toEqual(ids.slice(0, 3).sort());
   });
@@ -232,8 +242,8 @@ describe('Catalog HTTP integration (real PostgreSQL)', () => {
       .get('/products')
       .query({ category: otherCategorySlug })
       .expect(200);
-    const body = response.body as ProductListResponseDto;
-    expect(body.meta.total).toBe(1);
+    const body = response.body as ProductListEnvelope;
+    expect(body.meta.hasMore).toBe(false);
     expect(body.data[0].slug).toBe(slugs.other);
   });
 
@@ -242,27 +252,58 @@ describe('Catalog HTTP integration (real PostgreSQL)', () => {
       .get('/products')
       .query({ category: `${prefix}-missing` })
       .expect(200);
-    expect(response.body).toEqual({
-      data: [],
-      meta: { page: 1, limit: 20, total: 0, totalPages: 0 },
+    const body = response.body as ProductListEnvelope;
+    expect(body.data).toEqual([]);
+    expect(body.meta).toEqual({ nextCursor: null, hasMore: false, limit: 20 });
+  });
+
+  it('rejects a cursor used with a different category', async () => {
+    const first = await request(app!.getHttpServer())
+      .get('/products')
+      .query({ category: categorySlug, limit: 1 })
+      .expect(200);
+    const cursor = (first.body as ProductListEnvelope).meta.nextCursor;
+    const response = await request(app!.getHttpServer())
+      .get('/products')
+      .query({ category: otherCategorySlug, cursor })
+      .expect(400);
+    expect(response.body).toMatchObject({
+      success: false,
+      statusCode: 400,
+      errorCode: 'SYS-400',
     });
   });
 
-  it('returns an empty page beyond the last page', async () => {
-    const response = await request(app!.getHttpServer())
-      .get('/products')
-      .query({ category: categorySlug, page: 10 })
-      .expect(200);
-    const body = response.body as ProductListResponseDto;
-    expect(body.data).toEqual([]);
-    expect(body.meta.total).toBe(3);
+  it('returns one consistent error envelope for validation and missing products', async () => {
+    const invalid = await request(app!.getHttpServer())
+      .get('/products?limit=abc')
+      .expect(400);
+    expect(invalid.body).toMatchObject({
+      success: false,
+      statusCode: 400,
+      errorCode: 'SYS-400',
+      subErrors: expect.arrayContaining([
+        expect.objectContaining({ field: 'limit' }),
+      ]),
+    });
+    expect(invalid.body.traceId).toBe(invalid.headers['x-trace-id']);
+
+    const missing = await request(app!.getHttpServer())
+      .get(`/products/${prefix}-missing`)
+      .expect(404);
+    expect(missing.body).toMatchObject({
+      success: false,
+      statusCode: 404,
+      errorCode: 'HTTP-404',
+      message: 'Product not found',
+    });
   });
 
   it('serializes exact BigInt prices, available stock and ordered images', async () => {
     const response = await request(app!.getHttpServer())
       .get(`/products/${slugs['visible-a']}`)
       .expect(200);
-    const body = response.body as ProductResponseDto;
+    const body = (response.body as { data: ProductResponseDto }).data;
     expect(body.variants).toHaveLength(1);
     expect(body.variants[0]).toMatchObject({
       priceAmount: preciseAmount.toString(),
@@ -288,16 +329,14 @@ describe('Catalog HTTP integration (real PostgreSQL)', () => {
   });
 
   it.each([
-    'page=0',
-    'page=-1',
-    'page=1.5',
-    'page=10001',
     'limit=101',
     'limit=abc',
     'limit=1e2',
     'limit=',
     'limit=1&limit=2',
     'category=',
+    'page=1',
+    'cursor=invalid',
     'status=DRAFT',
   ])('rejects invalid query: %s', async (query) => {
     await request(app!.getHttpServer()).get(`/products?${query}`).expect(400);

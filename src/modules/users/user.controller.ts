@@ -13,8 +13,6 @@ import {
 } from '@nestjs/common';
 import {
   ApiBearerAuth,
-  ApiOkResponse,
-  ApiCreatedResponse,
   ApiNoContentResponse,
   ApiOperation,
   ApiTags,
@@ -27,6 +25,8 @@ import { UsersService } from './user.service.js';
 import { CreateAddressDto } from './dto/create-address.dto.js';
 import { UpdateAddressDto } from './dto/update-address.dto.js';
 import { AddressResponseDto } from './dto/address-response.dto.js';
+import { SuccessMessage } from '../../common/api/success-message.decorator.js';
+import { ApiWrappedResponse } from '../../common/api/api-success.decorator.js';
 
 @ApiTags('users')
 @ApiBearerAuth()
@@ -36,14 +36,16 @@ export class UserController {
   constructor(private readonly users: UsersService) {}
 
   @Get('me')
-  @ApiOkResponse({ type: UserResponseDto })
+  @SuccessMessage('Profile retrieved')
+  @ApiWrappedResponse(UserResponseDto)
   @ApiOperation({ summary: 'Get current user profile' })
   getMe(@Req() request: AuthenticatedRequest): Promise<UserResponseDto> {
     return this.users.getProfile(request.user.id);
   }
 
   @Patch('me')
-  @ApiOkResponse({ type: UserResponseDto })
+  @SuccessMessage('Profile updated')
+  @ApiWrappedResponse(UserResponseDto)
   @ApiOperation({ summary: 'Update current user name or phone' })
   updateMe(
     @Req() request: AuthenticatedRequest,
@@ -53,7 +55,8 @@ export class UserController {
   }
 
   @Get('me/addresses')
-  @ApiOkResponse({ type: AddressResponseDto, isArray: true })
+  @SuccessMessage('Addresses retrieved')
+  @ApiWrappedResponse(AddressResponseDto, { isArray: true })
   @ApiOperation({ summary: 'List current user addresses' })
   listAddresses(
     @Req() request: AuthenticatedRequest,
@@ -62,7 +65,8 @@ export class UserController {
   }
 
   @Post('me/addresses')
-  @ApiCreatedResponse({ type: AddressResponseDto })
+  @SuccessMessage('Address created')
+  @ApiWrappedResponse(AddressResponseDto, { status: 201 })
   @ApiOperation({ summary: 'Create a shipping address' })
   createAddress(
     @Req() request: AuthenticatedRequest,
@@ -72,7 +76,8 @@ export class UserController {
   }
 
   @Patch('me/addresses/:addressId')
-  @ApiOkResponse({ type: AddressResponseDto })
+  @SuccessMessage('Address updated')
+  @ApiWrappedResponse(AddressResponseDto)
   @ApiOperation({ summary: 'Update one of the current user addresses' })
   updateAddress(
     @Req() request: AuthenticatedRequest,

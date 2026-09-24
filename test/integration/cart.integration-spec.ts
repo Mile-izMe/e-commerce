@@ -42,7 +42,7 @@ describe('Cart HTTP integration (real PostgreSQL)', () => {
       .send({ variantId: id, quantity });
   const get = () => http().get('/cart').auth(token, { type: 'bearer' });
   const body = (response: { body: unknown }) =>
-    response.body as CartResponseDto;
+    (response.body as { data: CartResponseDto }).data;
 
   async function createUser() {
     const user = await database.orm.public.User.create({
@@ -512,7 +512,16 @@ describe('Cart HTTP integration (real PostgreSQL)', () => {
     expect(document.paths['/cart']?.get?.responses['200']).toMatchObject({
       content: {
         'application/json': {
-          schema: { $ref: '#/components/schemas/CartResponseDto' },
+          schema: {
+            allOf: [
+              { $ref: '#/components/schemas/ApiSuccessResponse' },
+              {
+                properties: {
+                  data: { $ref: '#/components/schemas/CartResponseDto' },
+                },
+              },
+            ],
+          },
         },
       },
     });
