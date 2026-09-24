@@ -23,12 +23,12 @@ sequenceDiagram
     UserRepository->>Database: INSERT users (role=CUSTOMER)
     Database-->>UserRepository: user (không chọn passwordHash)
     AuthService->>AuthService: sign JWT {sub: user.id}
-    AuthController-->>Client: {accessToken, tokenType, expiresIn, user}
+    AuthController-->>Client: {accessToken, refreshToken, tokenType, expiresIn, user}
     Client->>AuthController: POST /auth/login {identifier, password}
     AuthService->>UserRepository: tìm username hoặc email
     AuthService->>AuthService: Argon2id.verify(passwordHash, password)
     AuthService->>Database: kiểm tra trạng thái, ghi lastLoginAt
-    AuthService-->>Client: JWT + user công khai
+    AuthService-->>Client: JWT + refresh token + user công khai
 ```
 
 `passwordHash` chỉ được đọc trong đường đăng nhập. Mật khẩu gốc không lưu vào
@@ -66,6 +66,8 @@ Luôn đặt `AuthGuard` trước `RolesGuard` để request.user đã được 
 | ------ | -------------------------------- | ------------------------------------------------------------------------ | ---------------------- |
 | POST   | `/auth/register`                 | `email`, `username`, `password`, `name?`                                 | 201, `AuthResponseDto` |
 | POST   | `/auth/login`                    | `identifier` (username hoặc email), `password`                           | 200, `AuthResponseDto` |
+| POST   | `/auth/refresh`                  | `refreshToken`                                                         | 200, token mới         |
+| POST   | `/auth/logout`                   | `refreshToken`                                                         | 204                    |
 | GET    | `/users/me`                      | Không                                                                    | Hồ sơ hiện tại         |
 | PATCH  | `/users/me`                      | `name?`, `phone?`                                                        | Hồ sơ đã cập nhật      |
 | GET    | `/users/me/addresses`            | Không                                                                    | Danh sách địa chỉ      |
@@ -73,7 +75,13 @@ Luôn đặt `AuthGuard` trước `RolesGuard` để request.user đã được 
 | PATCH  | `/users/me/addresses/:addressId` | Một hoặc nhiều trường địa chỉ                                            | Địa chỉ đã cập nhật    |
 | DELETE | `/users/me/addresses/:addressId` | Không                                                                    | 204                    |
 
-`AuthResponseDto` gồm `{ accessToken, tokenType: "Bearer", expiresIn: 900, user }`.
+`AuthResponseDto` gồm `{ accessToken, refreshToken, tokenType: "Bearer", expiresIn: 900, user }`.
+Refresh token là chuỗi ngẫu nhiên, sống 7 ngày; database chỉ lưu SHA-256 hash
+của nó trong `UserSession`. Mỗi lần login/đăng ký tạo một session riêng.
+`POST /auth/refresh` không dùng access token: nó kiểm tra refresh token trong
+database, thay token cũ bằng token mới và trả access token mới. Token cũ không
+dùng lại được. `POST /auth/logout` thu hồi đúng session của refresh token.
+Client phải lưu refresh token mới sau mỗi lần refresh.
 Hồ sơ và địa chỉ lấy từ repository với danh sách field rõ ràng; không trả
 `passwordHash`, `deletedAt` hay `lastLoginAt`. Đăng ký chỉ tạo role `CUSTOMER`.
 Admin không thể được tạo bằng cách thêm `role` vào body.
@@ -103,8 +111,10 @@ node -e "console.log(require('node:crypto').randomBytes(48).toString('base64url'
 Sau đó thêm `JWT_SECRET="<giá trị vừa tạo>"` vào `.env`. Không commit `.env`.
 JWT dùng HS256, issuer `e-commerce`, audience `e-commerce-api`, hạn 15 phút.
 Các instance của cùng môi trường phải dùng cùng secret. Đổi secret sẽ làm token
-cũ hết hiệu lực. Dự án chưa có refresh token hoặc server-side logout; sau khi
-token hết hạn, client đăng nhập lại. Để triển khai công khai, cần thêm rate limit
+cũ hết hiệu lực. Logout không thu hồi JWT access token đã phát hành; nó còn
+hiệu lực tối đa 15 phút. Với ứng dụng web, nên đưa refresh token vào cookie
+HttpOnly/Secure phù hợp và bảo vệ endpoint dùng cookie khỏi CSRF. Hiện API
+nhận token trong body để dễ thử bằng Swagger/Postman. Để triển khai công khai, cần thêm rate limit
 cho login/register và quy trình quên mật khẩu/xác minh email phù hợp sản phẩm.
 
 ```powershell

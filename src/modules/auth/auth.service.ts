@@ -1,28 +1,31 @@
 import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
-import { UsersService } from '../users/user.service.js';
 import type { UserProfile } from '../users/entities/user.js';
-import type { RegisterRequestDto } from './dto/register-request.dto.js';
-import type { LoginRequestDto } from './dto/login-request.dto.js';
+import { UsersSessionService } from '../users/user-session.service.js';
+import { UsersService } from '../users/user.service.js';
+import {
+  ACCESS_TOKEN_TTL_SECONDS,
+  REFRESH_TOKEN_TTL_SECONDS,
+} from './constants/jwt-constants.js';
 import type { AuthResponseDto } from './dto/auth-response.dto.js';
-import { ACCESS_TOKEN_TTL_SECONDS } from './constants/jwt-constants.js';
+import type { LoginRequestDto } from './dto/login-request.dto.js';
+import type { RefreshRequestDto } from './dto/refresh-request.dto.js';
+import type { RegisterRequestDto } from './dto/register-request.dto.js';
 import { HashService } from './service/hash-service.js';
 
 @Injectable()
 export class AuthService {
   constructor(
     private readonly users: UsersService,
+    private readonly sessions: UsersSessionService,
     private readonly hashes: HashService,
     private readonly jwt: JwtService,
   ) {}
 
-  async register(request: RegisterRequestDto): Promise<string> {
+  async register(request: RegisterRequestDto): Promise<AuthResponseDto> {
     const passwordHash = await this.hashes.hash(request.password);
     const user = await this.users.register(request, passwordHash);
-    if (user) {
-      return 'Create account success';
-    }
-    return 'Create account failed';
+    return this.issueSession(user);
   }
 
   async login(request: LoginRequestDto): Promise<AuthResponseDto> {
@@ -33,15 +36,57 @@ export class AuthService {
     ) {
       throw new UnauthorizedException('Invalid credentials');
     }
-    // Do not issue new tokens for accounts disabled after registration.
     const profile = await this.users.getForSession(user.id);
     await this.users.recordLogin(user.id);
-    return this.issueToken(profile);
+    return this.issueSession(profile);
   }
 
-  private async issueToken(user: UserProfile): Promise<AuthResponseDto> {
+  async refresh(request: RefreshRequestDto): Promise<AuthResponseDto> {
+    const currentHash = this.hashes.hashToken(request.refreshToken);
+    const session = await this.sessions.findByTokenHash(currentHash);
+    if (
+      !session ||
+      session.revokedAt !== null ||
+      Date.parse(session.expiresAt) <= Date.now()
+    ) {
+      throw new UnauthorizedException('Invalid refresh token');
+    }
+    const user = await this.users.getForSession(session.userId);
+    const nextToken = this.hashes.newRefreshToken();
+    const rotated = await this.sessions.rotate(
+      session.id,
+      currentHash,
+      this.hashes.hashToken(nextToken),
+    );
+    if (!rotated) throw new UnauthorizedException('Invalid refresh token');
+    return this.authResponse(user, nextToken);
+  }
+
+  async logout(request: RefreshRequestDto): Promise<void> {
+    await this.sessions.revokeByTokenHash(
+      this.hashes.hashToken(request.refreshToken),
+    );
+  }
+
+  private async issueSession(user: UserProfile): Promise<AuthResponseDto> {
+    const refreshToken = this.hashes.newRefreshToken();
+    await this.sessions.createSession({
+      userId: user.id,
+      refreshTokenHash: this.hashes.hashToken(refreshToken),
+      expiresAt: new Date(
+        Date.now() + REFRESH_TOKEN_TTL_SECONDS * 1000,
+      ).toISOString(),
+    });
+    return this.authResponse(user, refreshToken);
+  }
+
+  private async authResponse(
+    user: UserProfile,
+    refreshToken: string,
+  ): Promise<AuthResponseDto> {
     return {
       accessToken: await this.jwt.signAsync({ sub: user.id }),
+      refreshToken,
       tokenType: 'Bearer',
       expiresIn: ACCESS_TOKEN_TTL_SECONDS,
       user,

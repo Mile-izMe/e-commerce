@@ -1,0 +1,83 @@
+[
+  {
+    "id": "index.userSession.userSession_userId_idx_a489d58a",
+    "label": "Create index \"userSession_userId_idx_a489d58a\" on \"userSession\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "index",
+        "name": "userSession_userId_idx_a489d58a",
+        "table": "userSession"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure index \"userSession_userId_idx_a489d58a\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"userSession_userId_idx_a489d58a\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "create index \"userSession_userId_idx_a489d58a\"",
+        "sql": "CREATE INDEX \"userSession_userId_idx_a489d58a\" ON \"public\".\"userSession\" (\"userId\")",
+        "params": []
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify index \"userSession_userId_idx_a489d58a\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"userSession_userId_idx_a489d58a\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "foreignKey.userSession.userSession_userId_fkey",
+    "label": "Add foreign key \"userSession_userId_fkey\" on \"userSession\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "foreignKey",
+        "name": "userSession_userId_fkey",
+        "table": "userSession"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure FK \"userSession_userId_fkey\" does not exist",
+        "sql": "SELECT NOT EXISTS (SELECT 1 AS \"one\" FROM \"pg_constraint\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"connamespace\" WHERE (\"c\".\"conname\" = $1 AND \"n\".\"nspname\" = $2 AND \"c\".\"conrelid\" = to_regclass($3))) AS \"result\"",
+        "params": [
+          "userSession_userId_fkey",
+          "public",
+          "\"public\".\"userSession\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "add FK \"userSession_userId_fkey\"",
+        "sql": "ALTER TABLE \"public\".\"userSession\"\nADD CONSTRAINT \"userSession_userId_fkey\"\nFOREIGN KEY (\"userId\")\nREFERENCES \"public\".\"users\" (\"id\")\nON DELETE CASCADE"
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify FK \"userSession_userId_fkey\" exists",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"pg_constraint\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"connamespace\" WHERE (\"c\".\"conname\" = $1 AND \"n\".\"nspname\" = $2 AND \"c\".\"conrelid\" = to_regclass($3))) AS \"result\"",
+        "params": [
+          "userSession_userId_fkey",
+          "public",
+          "\"public\".\"userSession\""
+        ]
+      }
+    ]
+  }
+]

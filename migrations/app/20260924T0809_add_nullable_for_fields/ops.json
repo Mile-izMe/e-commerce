@@ -1,0 +1,88 @@
+[
+  {
+    "id": "alterNullability.dropNotNull.userSession.lastUsedAt",
+    "label": "Drop NOT NULL on \"userSession\".\"lastUsedAt\"",
+    "operationClass": "widening",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "column",
+        "name": "lastUsedAt",
+        "table": "userSession"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure column \"lastUsedAt\" exists",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"information_schema\".\"columns\" WHERE (\"table_schema\" = $1 AND \"table_name\" = $2 AND \"column_name\" = $3)) AS \"result\"",
+        "params": [
+          "public",
+          "userSession",
+          "lastUsedAt"
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "drop NOT NULL on \"lastUsedAt\"",
+        "sql": "ALTER TABLE \"public\".\"userSession\" ALTER COLUMN \"lastUsedAt\" DROP NOT NULL"
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify column \"lastUsedAt\" is nullable",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"information_schema\".\"columns\" WHERE (\"table_schema\" = $1 AND \"table_name\" = $2 AND \"column_name\" = $3 AND \"is_nullable\" = $4)) AS \"result\"",
+        "params": [
+          "public",
+          "userSession",
+          "lastUsedAt",
+          "YES"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "alterNullability.dropNotNull.userSession.revokedAt",
+    "label": "Drop NOT NULL on \"userSession\".\"revokedAt\"",
+    "operationClass": "widening",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "column",
+        "name": "revokedAt",
+        "table": "userSession"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure column \"revokedAt\" exists",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"information_schema\".\"columns\" WHERE (\"table_schema\" = $1 AND \"table_name\" = $2 AND \"column_name\" = $3)) AS \"result\"",
+        "params": [
+          "public",
+          "userSession",
+          "revokedAt"
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "drop NOT NULL on \"revokedAt\"",
+        "sql": "ALTER TABLE \"public\".\"userSession\" ALTER COLUMN \"revokedAt\" DROP NOT NULL"
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify column \"revokedAt\" is nullable",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"information_schema\".\"columns\" WHERE (\"table_schema\" = $1 AND \"table_name\" = $2 AND \"column_name\" = $3 AND \"is_nullable\" = $4)) AS \"result\"",
+        "params": [
+          "public",
+          "userSession",
+          "revokedAt",
+          "YES"
+        ]
+      }
+    ]
+  }
+]

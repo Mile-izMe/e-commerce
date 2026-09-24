@@ -148,6 +148,89 @@ describe('Auth and Users HTTP integration (real PostgreSQL)', () => {
     expect(stored?.lastLoginAt).not.toBeNull();
   });
 
+  it('rotates refresh tokens and rejects the old token', async () => {
+    const { auth } = await register();
+    expect(auth.refreshToken).toEqual(expect.any(String));
+    const stored = await database.orm.public.UserSession.where({
+      userId: auth.user.id,
+    }).first();
+    expect(stored?.refreshTokenHash).not.toBe(auth.refreshToken);
+
+    const refreshed = await http()
+      .post('/auth/refresh')
+      .send({ refreshToken: auth.refreshToken })
+      .expect(200);
+    const next = refreshed.body as AuthResponseDto;
+    expect(next.user.id).toBe(auth.user.id);
+    expect(next.refreshToken).not.toBe(auth.refreshToken);
+    await http()
+      .get('/users/me')
+      .auth(next.accessToken, { type: 'bearer' })
+      .expect(200);
+    await http()
+      .post('/auth/refresh')
+      .send({ refreshToken: auth.refreshToken })
+      .expect(401);
+    await http()
+      .post('/auth/refresh')
+      .send({ refreshToken: next.refreshToken })
+      .expect(200);
+  });
+
+  it('allows only one concurrent rotation and revokes on logout', async () => {
+    const { auth } = await register();
+    const responses = await Promise.all([
+      http().post('/auth/refresh').send({ refreshToken: auth.refreshToken }),
+      http().post('/auth/refresh').send({ refreshToken: auth.refreshToken }),
+    ]);
+    expect(responses.map((response) => response.status).sort()).toEqual([
+      200, 401,
+    ]);
+    const next = responses.find((response) => response.status === 200)!
+      .body as AuthResponseDto;
+    await http()
+      .post('/auth/logout')
+      .send({ refreshToken: next.refreshToken })
+      .expect(204);
+    await http()
+      .post('/auth/refresh')
+      .send({ refreshToken: next.refreshToken })
+      .expect(401);
+  });
+
+  it('keeps separate login sessions and rejects malformed refresh requests', async () => {
+    const { auth, email } = await register();
+    const login = await http()
+      .post('/auth/login')
+      .send({ identifier: email, password })
+      .expect(200);
+    const other = login.body as AuthResponseDto;
+    expect(other.refreshToken).not.toBe(auth.refreshToken);
+    await http()
+      .post('/auth/logout')
+      .send({ refreshToken: auth.refreshToken })
+      .expect(204);
+    await http()
+      .post('/auth/refresh')
+      .send({ refreshToken: other.refreshToken })
+      .expect(200);
+    await http()
+      .post('/auth/refresh')
+      .send({ refreshToken: 'bad' })
+      .expect(400);
+  });
+
+  it('rejects an expired refresh session', async () => {
+    const { auth } = await register();
+    await database.orm.public.UserSession.where({
+      userId: auth.user.id,
+    }).update({ expiresAt: new Date(Date.now() - 1000).toISOString() });
+    await http()
+      .post('/auth/refresh')
+      .send({ refreshToken: auth.refreshToken })
+      .expect(401);
+  });
+
   it('rejects duplicate email and username without leaking account fields', async () => {
     const { email, username } = await register();
     const duplicate = { email, username: 'another_user', password };
@@ -378,6 +461,10 @@ describe('Auth and Users HTTP integration (real PostgreSQL)', () => {
     await http()
       .post('/auth/login')
       .send({ identifier: username, password })
+      .expect(403);
+    await http()
+      .post('/auth/refresh')
+      .send({ refreshToken: auth.refreshToken })
       .expect(403);
     await database.orm.public.User.where({ id: auth.user.id }).update({
       status: 'DELETED',

@@ -136,6 +136,7 @@ model User {
 
   addresses          UserAddress[]
   cart               Cart?
+  sessions           UserSession[]
   orders             Order[]
   idempotencyRecords IdempotencyRecord[]
   notifications      Notification[]
@@ -165,6 +166,18 @@ model UserAddress {
 
   @@index([userId])
   @@map("user_addresses")
+}
+
+model UserSession {
+  id                 Uuid                       @id @default(uuid())
+  userId             Uuid
+  refreshTokenHash   String
+  expiresAt          TimestamptzString
+  revokedAt          TimestamptzString?
+  createdAt          TimestamptzString          @default(now())
+  lastUsedAt         TimestamptzString?
+
+  user                User                @relation(fields:[userId], references: [id], onDelete: Cascade)
 }
 
 // A flat category list is sufficient initially; one category per product.

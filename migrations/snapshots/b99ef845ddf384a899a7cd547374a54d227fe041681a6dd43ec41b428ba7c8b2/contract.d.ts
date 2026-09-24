@@ -34,7 +34,7 @@ import type {
 } from '@prisma/orm-postgres/contract/types';
 
 export type StorageHash =
-  StorageHashBase<'ee2d02153331780abb78b0268b8aa589d9d5098cb5686c81c842a9856f527282'>;
+  StorageHashBase<'b99ef845ddf384a899a7cd547374a54d227fe041681a6dd43ec41b428ba7c8b2'>;
 export type ExecutionHash =
   ExecutionHashBase<'95da219cb7e43758f422a2c8631823d911a1745165ec51a050a2cbfe93a81811'>;
 export type ProfileHash =
@@ -1553,9 +1553,8 @@ export namespace Models {
     idempotencyRecords: public_IdempotencyRecord[];
     notifications: public_Notification[];
     orders: public_Order[];
-    sessions: public_UserSession[];
     readonly [RelationKeys]?:
-      'addresses' | 'cart' | 'idempotencyRecords' | 'notifications' | 'orders' | 'sessions';
+      'addresses' | 'cart' | 'idempotencyRecords' | 'notifications' | 'orders';
   };
   export type public_UserAddress = {
     id: CodecTypes['pg/uuid@1']['output'];
@@ -1584,8 +1583,7 @@ export namespace Models {
     revokedAt: CodecTypes['pg/timestamptz-string@1']['output'] | null;
     createdAt: CodecTypes['pg/timestamptz-string@1']['output'];
     lastUsedAt: CodecTypes['pg/timestamptz-string@1']['output'] | null;
-    user: public_User;
-    readonly [RelationKeys]?: 'user';
+    readonly [RelationKeys]?: never;
   };
   export type public_Category = {
     id: CodecTypes['pg/uuid@1']['output'];
@@ -4189,28 +4187,8 @@ type ContractBase = Omit<
               };
               primaryKey: { readonly columns: readonly ['id'] };
               uniques: readonly [];
-              indexes: readonly [
-                {
-                  readonly name: 'userSession_userId_idx_a489d58a';
-                  readonly prefix: 'userSession_userId_idx';
-                  readonly columns: readonly ['userId'];
-                  readonly unique: false;
-                },
-              ];
-              foreignKeys: readonly [
-                {
-                  readonly source: {
-                    readonly namespaceId: 'public' & NamespaceId;
-                    readonly tableName: 'userSession';
-                    readonly columns: readonly ['userId'];
-                  };
-                  readonly target: {
-                    readonly namespaceId: 'public' & NamespaceId;
-                    readonly tableName: 'users';
-                    readonly columns: readonly ['id'];
-                  };
-                },
-              ];
+              indexes: readonly [];
+              foreignKeys: readonly [];
             };
           };
           readonly valueSet: {
@@ -6444,17 +6422,6 @@ type ContractBase = Omit<
                   readonly targetFields: readonly ['userId'];
                 };
               };
-              readonly sessions: {
-                readonly to: {
-                  readonly namespace: 'public' & NamespaceId;
-                  readonly model: 'UserSession';
-                };
-                readonly cardinality: '1:N';
-                readonly on: {
-                  readonly localFields: readonly ['id'];
-                  readonly targetFields: readonly ['userId'];
-                };
-              };
             };
             readonly storage: {
               readonly table: 'users';
@@ -6621,17 +6588,7 @@ type ContractBase = Omit<
                 };
               };
             };
-            readonly relations: {
-              readonly user: {
-                readonly to: { readonly namespace: 'public' & NamespaceId; readonly model: 'User' };
-                readonly cardinality: 'N:1';
-                readonly nullable: false;
-                readonly on: {
-                  readonly localFields: readonly ['userId'];
-                  readonly targetFields: readonly ['id'];
-                };
-              };
-            };
+            readonly relations: Record<string, never>;
             readonly storage: {
               readonly table: 'userSession';
               readonly namespaceId: 'public';

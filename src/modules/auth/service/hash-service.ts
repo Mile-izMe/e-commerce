@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import * as argon2 from 'argon2';
+import { createHash, randomBytes } from 'node:crypto';
 
 @Injectable()
 export class HashService {
@@ -15,5 +16,13 @@ export class HashService {
       // A legacy or malformed hash is invalid; never fall back to plaintext.
       return false;
     }
+  }
+
+  newRefreshToken(): string {
+    return randomBytes(32).toString('base64url');
+  }
+
+  hashToken(token: string): string {
+    return createHash('sha256').update(token).digest('hex');
   }
 }
