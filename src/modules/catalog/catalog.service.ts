@@ -11,6 +11,8 @@ import {
   paginateCursor,
 } from '../../common/api/cursor-pagination.js';
 import { ProductRepository } from './repositories/product.repository.js';
+import { CategoryRepository } from './repositories/category.repository.js';
+import type { Category } from './entities/category.js';
 import type { CatalogProduct } from './entities/catalog-product.js';
 import type { ListProductsQueryDto } from './dto/list-products-query.dto.js';
 import type { ProductResponseDto } from './dto/product-response.dto.js';
@@ -48,7 +50,14 @@ function parseProductCursor(
 
 @Injectable()
 export class CatalogService {
-  constructor(private readonly products: ProductRepository) {}
+  constructor(
+    private readonly products: ProductRepository,
+    private readonly categories: CategoryRepository,
+  ) {}
+
+  listCategories(): Promise<Category[]> {
+    return this.categories.findActive();
+  }
 
   async list(
     query: ListProductsQueryDto,

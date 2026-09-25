@@ -85,6 +85,12 @@ describe('Catalog HTTP integration (real PostgreSQL)', () => {
       slug: otherCategorySlug,
     });
     categoryIds.push(category.id, other.id);
+    const inactiveCategory = await database.orm.public.Category.create({
+      name: 'Inactive category',
+      slug: `${prefix}-inactive`,
+      isActive: false,
+    });
+    categoryIds.push(inactiveCategory.id);
 
     const cases = [
       {
@@ -189,6 +195,26 @@ describe('Catalog HTTP integration (real PostgreSQL)', () => {
       .compile();
     app = module.createNestApplication();
     await app.init();
+  });
+
+  it('lists active categories independently of product pagination', async () => {
+    const response = await request(app!.getHttpServer())
+      .get('/categories')
+      .expect(200);
+    const body = response.body as {
+      success: boolean;
+      data: { id: string; name: string; slug: string }[];
+    };
+    expect(body.success).toBe(true);
+    expect(body.data).toEqual(
+      expect.arrayContaining([
+        { id: categoryIds[0], name: 'Test Category', slug: categorySlug },
+        { id: categoryIds[1], name: 'Other Category', slug: otherCategorySlug },
+      ]),
+    );
+    expect(
+      body.data.some((category) => category.slug === `${prefix}-inactive`),
+    ).toBe(false);
   });
 
   afterAll(async () => {
