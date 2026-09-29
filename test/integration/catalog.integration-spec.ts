@@ -217,6 +217,60 @@ describe('Catalog HTTP integration (real PostgreSQL)', () => {
     ).toBe(false);
   });
 
+  it('supports a four-product preview and ten-product pages within one category', async () => {
+    const category = await database.orm.public.Category.create({
+      name: 'Pagination fixture',
+      slug: `${prefix}-pagination`,
+    });
+    categoryIds.push(category.id);
+    const expectedIds: string[] = [];
+    for (let index = 0; index < 12; index++) {
+      const product = await database.orm.public.Product.create({
+        name: `Pagination product ${index}`,
+        slug: `${prefix}-pagination-${index}`,
+        categoryId: category.id,
+        status: 'ACTIVE',
+      });
+      ids.push(product.id);
+      expectedIds.push(product.id);
+      const variant = await database.orm.public.ProductVariant.create({
+        productId: product.id,
+        sku: `${prefix}-pagination-${index}`,
+        priceAmount: 100000n,
+        isActive: true,
+      });
+      variantIds.push(variant.id);
+    }
+
+    const preview = await request(app!.getHttpServer())
+      .get('/products')
+      .query({ category: category.slug, limit: 4 })
+      .expect(200);
+    expect((preview.body as ProductListEnvelope).data).toHaveLength(4);
+
+    const first = await request(app!.getHttpServer())
+      .get('/products')
+      .query({ category: category.slug, limit: 10 })
+      .expect(200);
+    const a = first.body as ProductListEnvelope;
+    expect(a.data).toHaveLength(10);
+    expect(a.meta.hasMore).toBe(true);
+    const second = await request(app!.getHttpServer())
+      .get('/products')
+      .query({ category: category.slug, limit: 10, cursor: a.meta.nextCursor })
+      .expect(200);
+    const b = second.body as ProductListEnvelope;
+    expect(b.data).toHaveLength(2);
+    expect(b.meta.hasMore).toBe(false);
+    const products = [...a.data, ...b.data];
+    expect(products.map((product) => product.id).sort()).toEqual(
+      expectedIds.sort(),
+    );
+    expect(
+      products.every((product) => product.category?.id === category.id),
+    ).toBe(true);
+  });
+
   afterAll(async () => {
     try {
       if (database) {
@@ -393,5 +447,46 @@ describe('Catalog HTTP integration (real PostgreSQL)', () => {
       row.slug.like('demo-%'),
     ).aggregate((a) => ({ count: a.count() }));
     expect(total.count).toBe(DEMO_PRODUCT_COUNT);
+  });
+
+  it('upgrades placeholder photos without overwriting custom images or product edits', async () => {
+    const product = await database.orm.public.Product.where({
+      slug: 'demo-cotton-t-shirt',
+    }).first();
+    expect(product).not.toBeNull();
+    const image = await database.orm.public.ProductImage.where({
+      productId: product!.id,
+      position: 0,
+    }).first();
+    expect(image).not.toBeNull();
+    await database.orm.public.ProductImage.where({ id: image!.id }).update({
+      url: 'https://placehold.co/800x800?text=old',
+    });
+    await seedCatalog(database);
+    const upgraded = await database.orm.public.ProductImage.where({
+      id: image!.id,
+    }).first();
+    expect(upgraded?.url).toMatch(/^https:\/\/images\.pexels\.com\/photos\//);
+    await database.orm.public.ProductImage.where({ id: image!.id }).update({
+      url: 'https://example.test/custom-photo.jpg',
+    });
+    await database.orm.public.Product.where({ id: product!.id }).update({
+      description: 'My edited description',
+    });
+    await seedCatalog(database);
+    expect(
+      (await database.orm.public.ProductImage.where({ id: image!.id }).first())
+        ?.url,
+    ).toBe('https://example.test/custom-photo.jpg');
+    expect(
+      (await database.orm.public.Product.where({ id: product!.id }).first())
+        ?.description,
+    ).toBe('My edited description');
+    await database.orm.public.ProductImage.where({ id: image!.id }).update({
+      url: upgraded!.url,
+    });
+    await database.orm.public.Product.where({ id: product!.id }).update({
+      description: product!.description,
+    });
   });
 });
