@@ -1,10 +1,14 @@
-import type { IncomingMessage } from 'node:http';
 import {
   UseFilters,
   UseGuards,
   UsePipes,
   ValidationPipe,
 } from '@nestjs/common';
+import type {
+  OnGatewayConnection,
+  OnGatewayDisconnect,
+  OnGatewayInit,
+} from '@nestjs/websockets';
 import {
   ConnectedSocket,
   MessageBody,
@@ -13,11 +17,7 @@ import {
   WebSocketServer,
   WsException,
 } from '@nestjs/websockets';
-import type {
-  OnGatewayInit,
-  OnGatewayConnection,
-  OnGatewayDisconnect,
-} from '@nestjs/websockets';
+import type { IncomingMessage } from 'node:http';
 import type { Namespace } from 'socket.io';
 import { AccessTokenService } from '../../auth/service/access-token.service.js';
 import { ChannelEventDto, SendMessageDto } from '../dto/messaging.dto.js';
@@ -27,8 +27,8 @@ import {
 } from '../filters/chat-exception.filter.js';
 import { WsAuthGuard } from '../guards/ws-auth.guard.js';
 import { MessagingService } from '../messaging.service.js';
-import { channelRoom } from './chat-socket.js';
 import type { ChatSocket } from './chat-socket.js';
+import { channelRoom } from './chat-socket.js';
 
 const allowedOrigins = () =>
   (process.env.CHAT_ALLOWED_ORIGINS ?? 'http://localhost:3000')
@@ -169,5 +169,49 @@ export class ChatGateway
         .to(channelRoom(data.channelId))
         .emit('message.created', result.message);
     return { success: true, data: result.message };
+  }
+
+  @SubscribeMessage('typing.activity')
+  async onTyping(
+    @ConnectedSocket() socket: ChatSocket,
+    @MessageBody() data: ChannelEventDto,
+  ) {
+    const currentUser = socket.data.user!.id;
+    const currentUserName = socket.data.user!.name;
+    const result = await this.chat.requireChannelAccess(
+      data.channelId,
+      currentUser,
+    );
+    const message = {
+      userId: currentUser,
+      userName: currentUserName,
+      channelId: data.channelId,
+      isTyping: true,
+    };
+    if (result)
+      socket.to(channelRoom(data.channelId)).emit('typing.changed', message);
+    return { success: true, data: message };
+  }
+
+  @SubscribeMessage('typing.stop')
+  async stopTyping(
+    @ConnectedSocket() socket: ChatSocket,
+    @MessageBody() data: ChannelEventDto,
+  ) {
+    const currentUser = socket.data.user!.id;
+    const currentUserName = socket.data.user!.name;
+    const result = await this.chat.requireChannelAccess(
+      data.channelId,
+      currentUser,
+    );
+    const message = {
+      userId: currentUser,
+      userName: currentUserName,
+      channelId: data.channelId,
+      isTyping: false,
+    };
+    if (result)
+      socket.to(channelRoom(data.channelId)).emit('typing.changed', message);
+    return { success: true, data: message };
   }
 }
