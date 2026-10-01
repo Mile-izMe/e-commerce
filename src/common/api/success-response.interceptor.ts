@@ -16,6 +16,7 @@ export class SuccessResponseInterceptor implements NestInterceptor {
   constructor(private readonly reflector: Reflector) {}
 
   intercept(context: ExecutionContext, next: CallHandler): Observable<unknown> {
+    if (context.getType() !== 'http') return next.handle();
     const response = context.switchToHttp().getResponse<Response>();
     const message =
       this.reflector.getAllAndOverride<string>(SUCCESS_MESSAGE, [

@@ -8,6 +8,7 @@ import { AppService } from './app.service.js';
 import { CatalogModule } from './modules/catalog/catalog.module.js';
 import { CartModule } from './modules/cart/cart.module.js';
 import { AuthModule } from './modules/auth/auth.module.js';
+import { MessagingModule } from './modules/messaging/messaging.module.js';
 import { UsersModule } from './modules/users/user.module.js';
 
 @Module({
@@ -17,6 +18,7 @@ import { UsersModule } from './modules/users/user.module.js';
     CartModule,
     UsersModule,
     AuthModule,
+    MessagingModule,
   ],
   controllers: [AppController],
   providers: [

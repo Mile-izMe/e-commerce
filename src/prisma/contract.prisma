@@ -140,6 +140,9 @@ model User {
   orders             Order[]
   idempotencyRecords IdempotencyRecord[]
   notifications      Notification[]
+  ownedGuilds        Guild[]
+  guildMemberships   GuildMember[]
+  messages           Message[]
 
   @@map("users")
 }
@@ -632,4 +635,67 @@ model Notification {
   @@index([status, availableAt])
   @@index([status, lockedUntil])
   @@map("notifications")
+}
+
+// ====================================
+// Messaging lab: one shared PostgreSQL database, one gateway instance.
+model Guild {
+  id          Uuid @id @default(uuid())
+  ownerId     Uuid
+  name        String
+  description String?
+  createdAt   TimestamptzString @default(now())
+  updatedAt   temporal.updatedAtString()
+
+  owner       User @relation(fields: [ownerId], references: [id], onDelete: Restrict)
+  channels    Channel[]
+  members     GuildMember[]
+
+  @@index([ownerId])
+  @@map("guilds")
+}
+
+model Channel {
+  id          Uuid @id @default(uuid())
+  guildId     Uuid
+  name        String
+  description String?
+  createdAt   TimestamptzString @default(now())
+  updatedAt   temporal.updatedAtString()
+
+  guild       Guild @relation(fields: [guildId], references: [id], onDelete: Cascade)
+  messages    Message[]
+
+  @@unique([guildId, name])
+  @@map("channels")
+}
+
+model GuildMember {
+  userId      Uuid
+  guildId     Uuid
+  joinedAt    TimestamptzString @default(now())
+
+  user        User @relation(fields: [userId], references: [id], onDelete: Restrict)
+  guild       Guild @relation(fields: [guildId], references: [id], onDelete: Cascade)
+
+  @@id([userId, guildId])
+  @@index([guildId])
+  @@map("guild_members")
+}
+
+model Message {
+  id              Uuid @id @default(uuid())
+  channelId       Uuid
+  authorId        Uuid
+  content         String
+  clientMessageId Uuid
+  createdAt       TimestamptzString @default(now())
+
+  channel         Channel @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  author          User @relation(fields: [authorId], references: [id], onDelete: Restrict)
+
+  // One client-generated key per author. A retry must use the same channel/content.
+  @@unique([authorId, clientMessageId])
+  @@index([channelId, createdAt, id])
+  @@map("messages")
 }

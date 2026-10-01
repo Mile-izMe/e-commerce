@@ -2,6 +2,7 @@ import { UsersModule } from '../users/user.module.js';
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { JwtModule } from '@nestjs/jwt';
+import { AccessTokenService } from './service/access-token.service.js';
 import { AuthController } from './auth.controller.js';
 import { AuthService } from './auth.service.js';
 import {
@@ -38,8 +39,14 @@ import { RolesGuard } from './guards/roles.guard.js';
       },
     }),
   ],
-  providers: [AuthService, HashService, AuthGuard, RolesGuard],
+  providers: [
+    AccessTokenService,
+    AuthService,
+    HashService,
+    AuthGuard,
+    RolesGuard,
+  ],
   controllers: [AuthController],
-  exports: [AuthService, AuthGuard, RolesGuard],
+  exports: [AccessTokenService, AuthService, AuthGuard, RolesGuard],
 })
 export class AuthModule {}

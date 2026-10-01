@@ -3,6 +3,7 @@ import { DatabaseModule } from '../../infrastructure/database/database.module.js
 import { UsersService } from './user.service.js';
 import { UserRepository } from './repositories/user.repository.js';
 import { UserController } from './user.controller.js';
+import { AccessTokenService } from '../auth/service/access-token.service.js';
 import { AuthGuard } from '../auth/guards/auth.guard.js';
 import { UserSessionRepository } from './repositories/user-session.repository.js';
 import { UsersSessionService } from './user-session.service.js';
@@ -15,6 +16,7 @@ import { UsersSessionService } from './user-session.service.js';
     UserRepository,
     UsersSessionService,
     UserSessionRepository,
+    AccessTokenService,
     AuthGuard,
   ],
   exports: [UsersService, UsersSessionService],
