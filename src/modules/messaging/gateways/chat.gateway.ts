@@ -162,7 +162,7 @@ export class ChatGateway
         code: 'RATE_LIMITED',
         message: 'Maximum 30 sends per 10 seconds per connection',
       });
-    const result = await this.chat.sendMessage(socket.data.user!.id, data);
+    const result = await this.chat.sendMessage(socket.data.user!, data);
     // Persistence precedes delivery. Retrying an existing key returns the same message without rebroadcast.
     if (result.created)
       this.server

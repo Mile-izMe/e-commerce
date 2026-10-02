@@ -2,7 +2,7 @@
 
 ## Lựa chọn adapter
 
-Dùng `IoAdapter` mặc định của NestJS với Socket.IO. Không cần viết custom adapter
+Dùng `IoAdapter` mặc định khi không có `CHAT_REDIS_URL`; khi có biến này, bootstrap gắn `RedisIoAdapter` để broadcast xuyên instance. Xem [Redis adapter lab](./redis-adapter-lab.md). Không cần đổi Gateway handlers
 hay mở thêm server/port. `ChatGateway` được đăng ký trong `MessagingModule`,
 module được import vào `AppModule`; Nest tự gắn Socket.IO vào HTTP server.
 
@@ -178,3 +178,20 @@ pnpm run test:integration -- --testPathPatterns=messaging
 Test dùng PostgreSQL riêng (`_test`) và server/socket thật: handshake JWT,
 owner/member permissions, validation, rooms, persistence, concurrent retry,
 cursor history, account suspension, token expiry và rate limiting.
+
+## Flow hiện tại:
+
+FE emit message.send
+→ Gateway BE nhận, xác thực và kiểm tra quyền
+→ Service/Repository lưu tin vào DB
+→ Gateway emit message.created tới room của channel
+→ FE nhận, cập nhật state/cache
+→ React render tin nhắn
+
+- Typing:
+  FE emit typing.activity / typing.stop
+  → BE xác thực và kiểm tra quyền
+  → broadcast typing.changed tới những socket khác trong room
+  → FE cập nhật danh sách typing và TTL
+  → React render indicator
+

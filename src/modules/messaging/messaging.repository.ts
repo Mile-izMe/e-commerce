@@ -2,11 +2,12 @@ import { ConflictException, Inject, Injectable } from '@nestjs/common';
 import { DATABASE } from '../../infrastructure/database/database.constants.js';
 import type { DatabaseClient } from '../../prisma/db.js';
 import type {
-  CreateGuildDto,
   CreateChannelDto,
+  CreateGuildDto,
   SendMessageDto,
 } from './dto/messaging.dto.js';
 import type { ChatMessage, MessageCursor } from './entities/chat.js';
+import { toChatMessage } from './entities/to-chat-mesage.js';
 
 @Injectable()
 export class MessagingRepository {
@@ -76,18 +77,19 @@ export class MessagingRepository {
   }
 
   async saveMessage(
-    authorId: string,
+    author: { id: string; name: string | null },
     data: SendMessageDto,
   ): Promise<{ message: ChatMessage; created: boolean }> {
     // The database unique constraint handles both sequential and concurrent retries.
     try {
-      return {
-        message: await this.db.orm.public.Message.create({ ...data, authorId }),
-        created: true,
-      };
+      const row = await this.db.orm.public.Message.create({
+        ...data,
+        authorId: author.id,
+      });
+      return { message: toChatMessage(row, author.name), created: true };
     } catch (error) {
       const existing = await this.db.orm.public.Message.where({
-        authorId,
+        authorId: author.id,
         clientMessageId: data.clientMessageId,
       }).first();
       if (!existing) throw error;
@@ -99,7 +101,7 @@ export class MessagingRepository {
           'clientMessageId was already used with a different payload',
         );
       }
-      return { message: existing, created: false };
+      return { message: toChatMessage(existing, author.name), created: false };
     }
   }
 
@@ -108,15 +110,19 @@ export class MessagingRepository {
     take: number,
     before?: MessageCursor,
   ): Promise<ChatMessage[]> {
-    const query = this.db.orm.public.Message.where({ channelId }).orderBy([
-      (message) => message.createdAt.desc(),
-      (message) => message.id.desc(),
-    ]);
-    return before
+    const query = this.db.orm.public.Message.where({ channelId })
+      .include('author')
+      .orderBy([
+        (message) => message.createdAt.desc(),
+        (message) => message.id.desc(),
+      ]);
+    const rows = before
       ? query
           .cursor({ createdAt: before.createdAt, id: before.id })
           .limit(take)
           .all()
       : query.limit(take).all();
+
+    return (await rows).map((row) => toChatMessage(row, row.author.name));
   }
 }

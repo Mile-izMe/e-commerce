@@ -74,9 +74,12 @@ export class MessagingService {
     return channel;
   }
 
-  async sendMessage(userId: string, data: SendMessageDto) {
-    await this.requireChannelAccess(data.channelId, userId);
-    return this.repo.saveMessage(userId, data);
+  async sendMessage(
+    author: { id: string; name: string | null },
+    data: SendMessageDto,
+  ) {
+    await this.requireChannelAccess(data.channelId, author.id);
+    return this.repo.saveMessage(author, data);
   }
 
   async history(
